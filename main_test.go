@@ -76,3 +76,25 @@ func TestApplyTimeWindowErrors(t *testing.T) {
 		t.Fatal("expected since > until error")
 	}
 }
+
+func TestBuildStats(t *testing.T) {
+	events := []Event{
+		{Time: time.Date(2026, 3, 13, 1, 0, 0, 0, time.UTC), Agent: "a", Action: "plan", Status: "ok"},
+		{Time: time.Date(2026, 3, 13, 1, 0, 2, 0, time.UTC), Agent: "b", Action: "test", Status: "fail"},
+		{Time: time.Date(2026, 3, 13, 1, 0, 5, 0, time.UTC), Agent: "a", Action: "edit", Status: "ok"},
+	}
+
+	got := buildStats(events)
+	if got.Events != 3 {
+		t.Fatalf("want 3 events, got %d", got.Events)
+	}
+	if got.Window.Start != "2026-03-13T01:00:00Z" || got.Window.End != "2026-03-13T01:00:05Z" {
+		t.Fatalf("unexpected window: %+v", got.Window)
+	}
+	if got.Window.Duration != "5s" {
+		t.Fatalf("unexpected duration: %s", got.Window.Duration)
+	}
+	if got.Agents["a"] != 2 || got.Actions["test"] != 1 || got.Status["ok"] != 2 {
+		t.Fatalf("unexpected counts: %+v", got)
+	}
+}

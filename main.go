@@ -48,6 +48,7 @@ func runFeed(args []string) error {
 	fs := flag.NewFlagSet("feed", flag.ContinueOnError)
 	input := fs.String("input", "", "input JSON/JSONL file (required)")
 	limit := fs.Int("limit", 0, "max events to print (0 = all)")
+	format := fs.String("format", "table", "output format: table|json")
 	since := fs.String("since", "", "only include events at or after RFC3339 timestamp")
 	until := fs.String("until", "", "only include events at or before RFC3339 timestamp")
 	if err := fs.Parse(args); err != nil {
@@ -69,16 +70,26 @@ func runFeed(args []string) error {
 		events = events[:*limit]
 	}
 
-	for i, ev := range events {
-		ts := ev.Time.Format("15:04:05")
-		fmt.Printf("%03d %s  %-12s  %-12s  %-6s  %s\n", i+1, ts, truncate(ev.Agent, 12), truncate(ev.Action, 12), truncate(ev.Status, 6), truncate(ev.Message, 80))
+	switch strings.ToLower(strings.TrimSpace(*format)) {
+	case "", "table":
+		for i, ev := range events {
+			ts := ev.Time.Format("15:04:05")
+			fmt.Printf("%03d %s  %-12s  %-12s  %-6s  %s\n", i+1, ts, truncate(ev.Agent, 12), truncate(ev.Action, 12), truncate(ev.Status, 6), truncate(ev.Message, 80))
+		}
+		return nil
+	case "json":
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(events)
+	default:
+		return fmt.Errorf("feed: unsupported --format %q (want table|json)", *format)
 	}
-	return nil
 }
 
 func runStats(args []string) error {
 	fs := flag.NewFlagSet("stats", flag.ContinueOnError)
 	input := fs.String("input", "", "input JSON/JSONL file (required)")
+	format := fs.String("format", "table", "output format: table|json")
 	since := fs.String("since", "", "only include events at or after RFC3339 timestamp")
 	until := fs.String("until", "", "only include events at or before RFC3339 timestamp")
 	if err := fs.Parse(args); err != nil {
@@ -96,11 +107,53 @@ func runStats(args []string) error {
 		return fmt.Errorf("stats: %w", err)
 	}
 	if len(events) == 0 {
+		if strings.EqualFold(strings.TrimSpace(*format), "json") {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(statsOutput{})
+		}
 		fmt.Println("no events found")
 		return nil
 	}
 	sort.Slice(events, func(i, j int) bool { return events[i].Time.Before(events[j].Time) })
 
+	summary := buildStats(events)
+
+	switch strings.ToLower(strings.TrimSpace(*format)) {
+	case "", "table":
+		fmt.Printf("events:   %d\n", summary.Events)
+		fmt.Printf("window:   %s -> %s (%s)\n", summary.Window.Start, summary.Window.End, summary.Window.Duration)
+		fmt.Println()
+		printCountTable("agents", summary.Agents)
+		fmt.Println()
+		printCountTable("actions", summary.Actions)
+		fmt.Println()
+		printCountTable("status", summary.Status)
+		return nil
+	case "json":
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(summary)
+	default:
+		return fmt.Errorf("stats: unsupported --format %q (want table|json)", *format)
+	}
+}
+
+type timeWindow struct {
+	Start    string `json:"start"`
+	End      string `json:"end"`
+	Duration string `json:"duration"`
+}
+
+type statsOutput struct {
+	Events  int            `json:"events"`
+	Window  timeWindow     `json:"window"`
+	Agents  map[string]int `json:"agents"`
+	Actions map[string]int `json:"actions"`
+	Status  map[string]int `json:"status"`
+}
+
+func buildStats(events []Event) statsOutput {
 	agentCount := map[string]int{}
 	actionCount := map[string]int{}
 	statusCount := map[string]int{}
@@ -112,15 +165,17 @@ func runStats(args []string) error {
 	}
 
 	duration := events[len(events)-1].Time.Sub(events[0].Time)
-	fmt.Printf("events:   %d\n", len(events))
-	fmt.Printf("window:   %s -> %s (%s)\n", events[0].Time.Format(time.RFC3339), events[len(events)-1].Time.Format(time.RFC3339), duration)
-	fmt.Println()
-	printCountTable("agents", agentCount)
-	fmt.Println()
-	printCountTable("actions", actionCount)
-	fmt.Println()
-	printCountTable("status", statusCount)
-	return nil
+	return statsOutput{
+		Events: len(events),
+		Window: timeWindow{
+			Start:    events[0].Time.Format(time.RFC3339),
+			End:      events[len(events)-1].Time.Format(time.RFC3339),
+			Duration: duration.String(),
+		},
+		Agents:  agentCount,
+		Actions: actionCount,
+		Status:  statusCount,
+	}
 }
 
 func loadEvents(path string) ([]Event, error) {
@@ -317,8 +372,8 @@ func usage() {
 	fmt.Print(`swarmscope - multi-agent run log inspector
 
 Usage:
-  swarmscope feed  --input run.jsonl [--limit N] [--since RFC3339] [--until RFC3339]
-  swarmscope stats --input run.jsonl [--since RFC3339] [--until RFC3339]
+  swarmscope feed  --input run.jsonl [--limit N] [--format table|json] [--since RFC3339] [--until RFC3339]
+  swarmscope stats --input run.jsonl [--format table|json] [--since RFC3339] [--until RFC3339]
 `)
 }
 

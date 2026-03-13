@@ -29,6 +29,10 @@ swarmscope feed --input ./examples/run.jsonl \
 
 # summary table by agent + action + status
 swarmscope stats --input ./examples/run.jsonl
+
+# machine-readable output for piping/automation
+swarmscope feed --input ./examples/run.jsonl --format json
+swarmscope stats --input ./examples/run.jsonl --format json
 ```
 
 ## Demo output
@@ -73,7 +77,7 @@ Early but usable (v0.x). Current focus:
 - [x] Feed view for JSON/JSONL logs
 - [x] Summary stats by agent/action/status
 - [x] RFC3339 time-window filtering (`--since`, `--until`)
-- [ ] Optional output formats (JSON/table)
+- [x] Optional output formats (JSON/table)
 - [ ] Per-agent drill-down subcommand
 - [ ] Release automation
 
