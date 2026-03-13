@@ -37,9 +37,13 @@ swarmscope stats --input ./examples/run.jsonl --agent coder-a,reviewer
 # summary table by agent + action + status
 swarmscope stats --input ./examples/run.jsonl
 
+# per-agent activity summary (events, first/last seen, unique actions/statuses)
+swarmscope agent --input ./examples/run.jsonl
+
 # machine-readable output for piping/automation
 swarmscope feed --input ./examples/run.jsonl --format json
 swarmscope stats --input ./examples/run.jsonl --format json
+swarmscope agent --input ./examples/run.jsonl --format json
 ```
 
 ## Demo output
@@ -87,7 +91,7 @@ Early but usable (v0.x). Current focus:
 - [x] Relative time-window filtering (`--last 30m`)
 - [x] Optional output formats (JSON/table)
 - [x] Per-agent drill-down filter (`--agent`)
-- [ ] Dedicated per-agent subcommand
+- [x] Dedicated per-agent subcommand
 - [ ] Release automation
 
 ## License

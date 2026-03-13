@@ -37,6 +37,10 @@ func main() {
 		if err := runStats(os.Args[2:]); err != nil {
 			exitErr(err)
 		}
+	case "agent":
+		if err := runAgent(os.Args[2:]); err != nil {
+			exitErr(err)
+		}
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -167,6 +171,72 @@ type statsOutput struct {
 	Status  map[string]int `json:"status"`
 }
 
+type agentOutput struct {
+	Agent     string `json:"agent"`
+	Events    int    `json:"events"`
+	FirstSeen string `json:"firstSeen"`
+	LastSeen  string `json:"lastSeen"`
+	Actions   int    `json:"actions"`
+	Statuses  int    `json:"statuses"`
+}
+
+func runAgent(args []string) error {
+	fs := flag.NewFlagSet("agent", flag.ContinueOnError)
+	input := fs.String("input", "", "input JSON/JSONL file (required)")
+	format := fs.String("format", "table", "output format: table|json")
+	agent := fs.String("agent", "", "filter by agent name (comma-separated for multiple)")
+	since := fs.String("since", "", "only include events at or after RFC3339 timestamp")
+	until := fs.String("until", "", "only include events at or before RFC3339 timestamp")
+	last := fs.String("last", "", "only include events from the most recent duration (e.g. 30m, 2h)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*input) == "" {
+		return errors.New("agent: --input is required")
+	}
+
+	events, err := loadEvents(*input)
+	if err != nil {
+		return err
+	}
+	sinceRaw, untilRaw, err := normalizeTimeWindowArgs(*since, *until, *last, time.Now().UTC())
+	if err != nil {
+		return fmt.Errorf("agent: %w", err)
+	}
+	events, err = applyTimeWindow(events, sinceRaw, untilRaw)
+	if err != nil {
+		return fmt.Errorf("agent: %w", err)
+	}
+	events = applyAgentFilter(events, *agent)
+
+	summary := buildAgentStats(events)
+	if len(summary) == 0 {
+		if strings.EqualFold(strings.TrimSpace(*format), "json") {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode([]agentOutput{})
+		}
+		fmt.Println("no events found")
+		return nil
+	}
+
+	switch strings.ToLower(strings.TrimSpace(*format)) {
+	case "", "table":
+		fmt.Println("agents:")
+		for _, row := range summary {
+			fmt.Printf("  %-18s %4d events  first=%s  last=%s  actions=%d  statuses=%d\n",
+				truncate(row.Agent, 18), row.Events, row.FirstSeen, row.LastSeen, row.Actions, row.Statuses)
+		}
+		return nil
+	case "json":
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(summary)
+	default:
+		return fmt.Errorf("agent: unsupported --format %q (want table|json)", *format)
+	}
+}
+
 func buildStats(events []Event) statsOutput {
 	agentCount := map[string]int{}
 	actionCount := map[string]int{}
@@ -190,6 +260,54 @@ func buildStats(events []Event) statsOutput {
 		Actions: actionCount,
 		Status:  statusCount,
 	}
+}
+
+func buildAgentStats(events []Event) []agentOutput {
+	type acc struct {
+		events   int
+		first    time.Time
+		last     time.Time
+		actions  map[string]struct{}
+		statuses map[string]struct{}
+	}
+
+	byAgent := map[string]*acc{}
+	for _, ev := range events {
+		entry, ok := byAgent[ev.Agent]
+		if !ok {
+			entry = &acc{first: ev.Time, last: ev.Time, actions: map[string]struct{}{}, statuses: map[string]struct{}{}}
+			byAgent[ev.Agent] = entry
+		}
+		entry.events++
+		if ev.Time.Before(entry.first) {
+			entry.first = ev.Time
+		}
+		if ev.Time.After(entry.last) {
+			entry.last = ev.Time
+		}
+		entry.actions[ev.Action] = struct{}{}
+		entry.statuses[ev.Status] = struct{}{}
+	}
+
+	out := make([]agentOutput, 0, len(byAgent))
+	for agent, entry := range byAgent {
+		out = append(out, agentOutput{
+			Agent:     agent,
+			Events:    entry.events,
+			FirstSeen: entry.first.Format(time.RFC3339),
+			LastSeen:  entry.last.Format(time.RFC3339),
+			Actions:   len(entry.actions),
+			Statuses:  len(entry.statuses),
+		})
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Events == out[j].Events {
+			return out[i].Agent < out[j].Agent
+		}
+		return out[i].Events > out[j].Events
+	})
+	return out
 }
 
 func loadEvents(path string) ([]Event, error) {
@@ -445,6 +563,7 @@ func usage() {
 Usage:
   swarmscope feed  --input run.jsonl [--limit N] [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m]
   swarmscope stats --input run.jsonl [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m]
+  swarmscope agent --input run.jsonl [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m]
 `)
 }
 

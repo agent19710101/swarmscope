@@ -151,3 +151,29 @@ func TestParseAgentSet(t *testing.T) {
 		t.Fatal("expected coder-a in set")
 	}
 }
+
+func TestBuildAgentStats(t *testing.T) {
+	events := []Event{
+		{Time: time.Date(2026, 3, 13, 1, 0, 0, 0, time.UTC), Agent: "a", Action: "plan", Status: "ok"},
+		{Time: time.Date(2026, 3, 13, 1, 0, 2, 0, time.UTC), Agent: "b", Action: "test", Status: "fail"},
+		{Time: time.Date(2026, 3, 13, 1, 0, 5, 0, time.UTC), Agent: "a", Action: "edit", Status: "ok"},
+		{Time: time.Date(2026, 3, 13, 1, 0, 6, 0, time.UTC), Agent: "a", Action: "edit", Status: "warn"},
+	}
+
+	got := buildAgentStats(events)
+	if len(got) != 2 {
+		t.Fatalf("want 2 rows, got %d", len(got))
+	}
+	if got[0].Agent != "a" || got[0].Events != 3 {
+		t.Fatalf("unexpected first row: %+v", got[0])
+	}
+	if got[0].FirstSeen != "2026-03-13T01:00:00Z" || got[0].LastSeen != "2026-03-13T01:00:06Z" {
+		t.Fatalf("unexpected time bounds: %+v", got[0])
+	}
+	if got[0].Actions != 2 || got[0].Statuses != 2 {
+		t.Fatalf("unexpected cardinality counts: %+v", got[0])
+	}
+	if got[1].Agent != "b" || got[1].Events != 1 {
+		t.Fatalf("unexpected second row: %+v", got[1])
+	}
+}
