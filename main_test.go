@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -28,6 +29,27 @@ func TestLoadEventsJSONL(t *testing.T) {
 	}
 }
 
+func TestLoadEventsJSONLLargeLine(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "large.jsonl")
+	largeMessage := strings.Repeat("x", 70*1024)
+	content := "{\"ts\":\"2026-03-13T01:10:00Z\",\"agent\":\"a\",\"action\":\"plan\",\"status\":\"ok\",\"message\":\"" + largeMessage + "\"}\n"
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := loadEvents(p)
+	if err != nil {
+		t.Fatalf("loadEvents error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("want 1 event, got %d", len(events))
+	}
+	if len(events[0].Message) != len(largeMessage) {
+		t.Fatalf("unexpected message length: got %d, want %d", len(events[0].Message), len(largeMessage))
+	}
+}
+
 func TestParseOneDefaults(t *testing.T) {
 	ev, err := parseOne([]byte(`{"foo":"bar"}`))
 	if err != nil {
@@ -36,11 +58,8 @@ func TestParseOneDefaults(t *testing.T) {
 	if ev.Agent != "unknown" || ev.Action != "unknown" || ev.Status != "unknown" {
 		t.Fatalf("unexpected defaults: %+v", ev)
 	}
-	if ev.Time.IsZero() {
-		t.Fatal("expected fallback time")
-	}
-	if time.Since(ev.Time) > 2*time.Second {
-		t.Fatal("fallback time too old")
+	if want := time.Unix(0, 0).UTC(); !ev.Time.Equal(want) {
+		t.Fatalf("expected deterministic fallback time %s, got %s", want.Format(time.RFC3339), ev.Time.Format(time.RFC3339))
 	}
 }
 

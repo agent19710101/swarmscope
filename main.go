@@ -375,6 +375,8 @@ func loadEvents(path string) ([]Event, error) {
 func decodeJSONL(r io.Reader) ([]Event, error) {
 	var events []Event
 	s := bufio.NewScanner(r)
+	const maxJSONLLineBytes = 10 * 1024 * 1024
+	s.Buffer(make([]byte, 0, 64*1024), maxJSONLLineBytes)
 	line := 0
 	for s.Scan() {
 		line++
@@ -440,7 +442,7 @@ func parseOne(line []byte) (Event, error) {
 		ev.Status = "unknown"
 	}
 	if ev.Time.IsZero() {
-		ev.Time = time.Now().UTC()
+		ev.Time = time.Unix(0, 0).UTC()
 	}
 	return ev, nil
 }
