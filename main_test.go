@@ -224,6 +224,42 @@ func TestApplyContainsFilter(t *testing.T) {
 	}
 }
 
+func TestApplySourceFilter(t *testing.T) {
+	baseEvents := []Event{
+		{Agent: "a", Source: "/tmp/one.jsonl"},
+		{Agent: "b", Source: "/tmp/two.jsonl"},
+		{Agent: "c", Source: "./logs/three.jsonl.gz"},
+	}
+
+	got := applySourceFilter(append([]Event(nil), baseEvents...), "two.jsonl")
+	if len(got) != 1 || got[0].Agent != "b" {
+		t.Fatalf("unexpected basename filter result: %+v", got)
+	}
+
+	got = applySourceFilter(append([]Event(nil), baseEvents...), "/tmp/one.jsonl, ./logs/three.jsonl.gz")
+	if len(got) != 2 || got[0].Agent != "a" || got[1].Agent != "c" {
+		t.Fatalf("unexpected full-path filter result: %+v", got)
+	}
+
+	all := applySourceFilter(append([]Event(nil), baseEvents...), " ")
+	if len(all) != len(baseEvents) {
+		t.Fatalf("blank source filter should keep all events, got %d", len(all))
+	}
+}
+
+func TestParseSourceSet(t *testing.T) {
+	set := parseSourceSet(" one.jsonl, ,TWO.JSONL  ")
+	if len(set) != 2 {
+		t.Fatalf("want 2 sources, got %d", len(set))
+	}
+	if _, ok := set["one.jsonl"]; !ok {
+		t.Fatal("expected one.jsonl in set")
+	}
+	if _, ok := set["two.jsonl"]; !ok {
+		t.Fatal("expected two.jsonl in set")
+	}
+}
+
 func TestBuildAgentStats(t *testing.T) {
 	events := []Event{
 		{Time: time.Date(2026, 3, 13, 1, 0, 0, 0, time.UTC), Agent: "a", Action: "plan", Status: "ok"},

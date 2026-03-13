@@ -43,6 +43,10 @@ swarmscope stats --input ./examples/run.jsonl --last 30m
 swarmscope feed --input ./examples/run.jsonl --agent coder-a
 swarmscope stats --input ./examples/run.jsonl --agent coder-a,reviewer
 
+# focus on one input source when merging multiple files
+swarmscope feed --input ./logs/a.jsonl,./logs/b.jsonl --source b.jsonl
+swarmscope stats --input ./logs/a.jsonl,./logs/b.jsonl --source ./logs/a.jsonl
+
 # focus events by message text (case-insensitive)
 swarmscope feed --input ./examples/run.jsonl --contains "edge-case"
 swarmscope stats --input ./examples/run.jsonl --contains "failed"
@@ -130,6 +134,7 @@ Early but usable (v0.x). Current focus:
 - [x] Relative time-window filtering (`--last 30m`)
 - [x] Optional output formats (JSON/table)
 - [x] Per-agent drill-down filter (`--agent`)
+- [x] Per-source drill-down filter (`--source`)
 - [x] Message substring filter (`--contains`)
 - [x] Dedicated per-agent subcommand
 - [x] Multi-file input merge (`--input a.jsonl,b.jsonl`)

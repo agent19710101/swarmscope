@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -76,6 +77,7 @@ func runFeed(args []string) error {
 	tail := fs.Bool("tail", false, "when used with --limit, print most recent N events instead of oldest N")
 	format := fs.String("format", "table", "output format: table|json")
 	agent := fs.String("agent", "", "filter by agent name (comma-separated for multiple)")
+	source := fs.String("source", "", "filter by source file path or basename (comma-separated for multiple)")
 	contains := fs.String("contains", "", "only include events whose message contains this case-insensitive substring")
 	since := fs.String("since", "", "only include events at or after RFC3339 timestamp")
 	until := fs.String("until", "", "only include events at or before RFC3339 timestamp")
@@ -109,6 +111,7 @@ func runFeed(args []string) error {
 		return fmt.Errorf("feed: %w", err)
 	}
 	events = applyAgentFilter(events, *agent)
+	events = applySourceFilter(events, *source)
 	events = applyContainsFilter(events, *contains)
 	sort.Slice(events, func(i, j int) bool { return events[i].Time.Before(events[j].Time) })
 	events = applyLimit(events, *limit, *tail)
@@ -134,6 +137,7 @@ func runStats(args []string) error {
 	input := fs.String("input", "", "input JSON/JSONL file(s), comma-separated (required)")
 	format := fs.String("format", "table", "output format: table|json")
 	agent := fs.String("agent", "", "filter by agent name (comma-separated for multiple)")
+	source := fs.String("source", "", "filter by source file path or basename (comma-separated for multiple)")
 	contains := fs.String("contains", "", "only include events whose message contains this case-insensitive substring")
 	since := fs.String("since", "", "only include events at or after RFC3339 timestamp")
 	until := fs.String("until", "", "only include events at or before RFC3339 timestamp")
@@ -167,6 +171,7 @@ func runStats(args []string) error {
 		return fmt.Errorf("stats: %w", err)
 	}
 	events = applyAgentFilter(events, *agent)
+	events = applySourceFilter(events, *source)
 	events = applyContainsFilter(events, *contains)
 	if len(events) == 0 {
 		if strings.EqualFold(strings.TrimSpace(*format), "json") {
@@ -229,6 +234,7 @@ func runAgent(args []string) error {
 	input := fs.String("input", "", "input JSON/JSONL file(s), comma-separated (required)")
 	format := fs.String("format", "table", "output format: table|json")
 	agent := fs.String("agent", "", "filter by agent name (comma-separated for multiple)")
+	source := fs.String("source", "", "filter by source file path or basename (comma-separated for multiple)")
 	contains := fs.String("contains", "", "only include events whose message contains this case-insensitive substring")
 	since := fs.String("since", "", "only include events at or after RFC3339 timestamp")
 	until := fs.String("until", "", "only include events at or before RFC3339 timestamp")
@@ -263,6 +269,7 @@ func runAgent(args []string) error {
 		return fmt.Errorf("agent: %w", err)
 	}
 	events = applyAgentFilter(events, *agent)
+	events = applySourceFilter(events, *source)
 	events = applyContainsFilter(events, *contains)
 
 	summary := buildAgentStats(events)
@@ -736,6 +743,27 @@ func applyAgentFilter(events []Event, raw string) []Event {
 	return out
 }
 
+func applySourceFilter(events []Event, raw string) []Event {
+	sources := parseSourceSet(raw)
+	if len(sources) == 0 {
+		return events
+	}
+
+	out := events[:0]
+	for _, ev := range events {
+		source := strings.ToLower(strings.TrimSpace(ev.Source))
+		base := strings.ToLower(filepath.Base(strings.TrimSpace(ev.Source)))
+		if _, ok := sources[source]; ok {
+			out = append(out, ev)
+			continue
+		}
+		if _, ok := sources[base]; ok {
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
 func applyContainsFilter(events []Event, raw string) []Event {
 	needle := strings.ToLower(strings.TrimSpace(raw))
 	if needle == "" {
@@ -747,6 +775,23 @@ func applyContainsFilter(events []Event, raw string) []Event {
 		if strings.Contains(strings.ToLower(ev.Message), needle) {
 			out = append(out, ev)
 		}
+	}
+	return out
+}
+
+func parseSourceSet(raw string) map[string]struct{} {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	out := map[string]struct{}{}
+	for _, part := range strings.Split(raw, ",") {
+		name := strings.ToLower(strings.TrimSpace(part))
+		if name != "" {
+			out[name] = struct{}{}
+		}
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }
@@ -793,9 +838,9 @@ func usage() {
 	fmt.Print(`swarmscope - multi-agent run log inspector
 
 Usage:
-  swarmscope feed  --input run.jsonl[,run2.jsonl] [--limit N] [--tail] [--format table|json] [--agent NAME[,NAME...]] [--contains TEXT] [--since RFC3339] [--until RFC3339] [--last 30m] [--map profile.json] [--strict]
-  swarmscope stats --input run.jsonl[,run2.jsonl] [--format table|json] [--agent NAME[,NAME...]] [--contains TEXT] [--since RFC3339] [--until RFC3339] [--last 30m] [--map profile.json] [--strict]
-  swarmscope agent --input run.jsonl[,run2.jsonl] [--format table|json] [--agent NAME[,NAME...]] [--contains TEXT] [--since RFC3339] [--until RFC3339] [--last 30m] [--map profile.json] [--strict]
+  swarmscope feed  --input run.jsonl[,run2.jsonl] [--limit N] [--tail] [--format table|json] [--agent NAME[,NAME...]] [--source PATH[,PATH...]] [--contains TEXT] [--since RFC3339] [--until RFC3339] [--last 30m] [--map profile.json] [--strict]
+  swarmscope stats --input run.jsonl[,run2.jsonl] [--format table|json] [--agent NAME[,NAME...]] [--source PATH[,PATH...]] [--contains TEXT] [--since RFC3339] [--until RFC3339] [--last 30m] [--map profile.json] [--strict]
+  swarmscope agent --input run.jsonl[,run2.jsonl] [--format table|json] [--agent NAME[,NAME...]] [--source PATH[,PATH...]] [--contains TEXT] [--since RFC3339] [--until RFC3339] [--last 30m] [--map profile.json] [--strict]
 `)
 }
 
