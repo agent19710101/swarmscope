@@ -98,6 +98,8 @@ Early but usable (v0.x). Current focus:
 - [x] Multi-file input merge (`--input a.jsonl,b.jsonl`)
 - [ ] Release automation
 
+See also: [`RELEASE_PLAN.md`](./RELEASE_PLAN.md) for v0.1–v0.3 milestones.
+
 ## License
 
 MIT
