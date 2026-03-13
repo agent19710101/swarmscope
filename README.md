@@ -93,7 +93,7 @@ agents:
 
 `swarmscope` normalizes common fields from each record:
 
-- timestamp: `ts`, `time`, `timestamp`, `created_at`
+- timestamp: `ts`, `time`, `timestamp`, `created_at` (RFC3339 or Unix epoch seconds/milliseconds/microseconds/nanoseconds)
 - agent: `agent`, `agent_name`, `worker`, `session`
 - action: `action`, `event`, `type`, `tool`
 - status: `status`, `level`, `result`

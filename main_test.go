@@ -96,6 +96,42 @@ func TestParseOneDefaults(t *testing.T) {
 	}
 }
 
+func TestParseOneTimestampSupportsUnixEpochVariants(t *testing.T) {
+	cases := []struct {
+		name string
+		line string
+		want time.Time
+	}{
+		{
+			name: "seconds-number",
+			line: `{"ts":1710000000,"agent":"a","action":"x","status":"ok"}`,
+			want: time.Unix(1710000000, 0).UTC(),
+		},
+		{
+			name: "seconds-string",
+			line: `{"ts":"1710000000","agent":"a","action":"x","status":"ok"}`,
+			want: time.Unix(1710000000, 0).UTC(),
+		},
+		{
+			name: "milliseconds-number",
+			line: `{"ts":1710000000123,"agent":"a","action":"x","status":"ok"}`,
+			want: time.Unix(1710000000, 123000000).UTC(),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ev, err := parseOne([]byte(tc.line), defaultParserProfile())
+			if err != nil {
+				t.Fatalf("parseOne error: %v", err)
+			}
+			if !ev.Time.Equal(tc.want) {
+				t.Fatalf("unexpected time: got %s want %s", ev.Time.Format(time.RFC3339Nano), tc.want.Format(time.RFC3339Nano))
+			}
+		})
+	}
+}
+
 func TestApplyTimeWindow(t *testing.T) {
 	events := []Event{
 		{Time: time.Date(2026, 3, 13, 1, 0, 0, 0, time.UTC), Agent: "a"},

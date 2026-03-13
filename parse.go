@@ -8,7 +8,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -275,15 +277,70 @@ func pickTime(m map[string]any, keys []string) time.Time {
 		if !ok {
 			continue
 		}
-		s, ok := v.(string)
-		if !ok {
-			continue
-		}
-		if t, err := time.Parse(time.RFC3339, s); err == nil {
-			return t.UTC()
+		switch vv := v.(type) {
+		case string:
+			ss := strings.TrimSpace(vv)
+			if ss == "" {
+				continue
+			}
+			if t, err := time.Parse(time.RFC3339, ss); err == nil {
+				return t.UTC()
+			}
+			if nInt, err := strconv.ParseInt(ss, 10, 64); err == nil {
+				if t := parseUnixTimestampInt(nInt); !t.IsZero() {
+					return t
+				}
+			}
+			if n, err := strconv.ParseFloat(ss, 64); err == nil {
+				if t := parseUnixTimestamp(n); !t.IsZero() {
+					return t
+				}
+			}
+		case float64:
+			if t := parseUnixTimestamp(vv); !t.IsZero() {
+				return t
+			}
 		}
 	}
 	return time.Time{}
+}
+
+func parseUnixTimestamp(v float64) time.Time {
+	if math.IsNaN(v) || math.IsInf(v, 0) || v == 0 {
+		return time.Time{}
+	}
+	if math.Trunc(v) == v {
+		return parseUnixTimestampInt(int64(v))
+	}
+
+	abs := math.Abs(v)
+	if abs >= 1e12 {
+		secs := v / 1e3
+		whole, frac := math.Modf(secs)
+		return time.Unix(int64(whole), int64(frac*float64(time.Second))).UTC()
+	}
+	whole, frac := math.Modf(v)
+	return time.Unix(int64(whole), int64(frac*float64(time.Second))).UTC()
+}
+
+func parseUnixTimestampInt(v int64) time.Time {
+	if v == 0 {
+		return time.Time{}
+	}
+	abs := v
+	if abs < 0 {
+		abs = -abs
+	}
+	switch {
+	case abs >= 1e18:
+		return time.Unix(0, v).UTC()
+	case abs >= 1e15:
+		return time.Unix(0, v*int64(time.Microsecond)).UTC()
+	case abs >= 1e12:
+		return time.Unix(0, v*int64(time.Millisecond)).UTC()
+	default:
+		return time.Unix(v, 0).UTC()
+	}
 }
 
 func pickString(m map[string]any, keys ...string) string {
