@@ -23,3 +23,13 @@ jobs:
         uses: dominikh/staticcheck-action@v1
         with:
           version: latest
+
+  race:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: race test
+        run: go test -race ./...
