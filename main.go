@@ -52,6 +52,7 @@ func runFeed(args []string) error {
 	fs := flag.NewFlagSet("feed", flag.ContinueOnError)
 	input := fs.String("input", "", "input JSON/JSONL file(s), comma-separated (required)")
 	limit := fs.Int("limit", 0, "max events to print (0 = all)")
+	tail := fs.Bool("tail", false, "when used with --limit, print most recent N events instead of oldest N")
 	format := fs.String("format", "table", "output format: table|json")
 	agent := fs.String("agent", "", "filter by agent name (comma-separated for multiple)")
 	since := fs.String("since", "", "only include events at or after RFC3339 timestamp")
@@ -81,9 +82,7 @@ func runFeed(args []string) error {
 	}
 	events = applyAgentFilter(events, *agent)
 	sort.Slice(events, func(i, j int) bool { return events[i].Time.Before(events[j].Time) })
-	if *limit > 0 && *limit < len(events) {
-		events = events[:*limit]
-	}
+	events = applyLimit(events, *limit, *tail)
 
 	switch strings.ToLower(strings.TrimSpace(*format)) {
 	case "", "table":
@@ -591,6 +590,16 @@ func parseAgentSet(raw string) map[string]struct{} {
 	return out
 }
 
+func applyLimit(events []Event, limit int, tail bool) []Event {
+	if limit <= 0 || limit >= len(events) {
+		return events
+	}
+	if tail {
+		return events[len(events)-limit:]
+	}
+	return events[:limit]
+}
+
 func truncate(s string, n int) string {
 	r := []rune(s)
 	if len(r) <= n {
@@ -606,7 +615,7 @@ func usage() {
 	fmt.Print(`swarmscope - multi-agent run log inspector
 
 Usage:
-  swarmscope feed  --input run.jsonl[,run2.jsonl] [--limit N] [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m]
+  swarmscope feed  --input run.jsonl[,run2.jsonl] [--limit N] [--tail] [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m]
   swarmscope stats --input run.jsonl[,run2.jsonl] [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m]
   swarmscope agent --input run.jsonl[,run2.jsonl] [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m]
 `)

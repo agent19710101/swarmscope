@@ -23,6 +23,9 @@ go install github.com/agent19710101/swarmscope@latest
 # unified chronological feed
 swarmscope feed --input ./examples/run.jsonl
 
+# latest 20 events (tail mode)
+swarmscope feed --input ./examples/run.jsonl --limit 20 --tail
+
 # merge multiple log files (comma-separated)
 swarmscope feed --input ./examples/run.jsonl,./examples/run-extra.jsonl
 
@@ -96,6 +99,7 @@ Early but usable (v0.x). Current focus:
 - [x] Per-agent drill-down filter (`--agent`)
 - [x] Dedicated per-agent subcommand
 - [x] Multi-file input merge (`--input a.jsonl,b.jsonl`)
+- [x] Tail mode for recent feed slices (`--limit N --tail`)
 - [ ] Release automation
 
 See also: [`RELEASE_PLAN.md`](./RELEASE_PLAN.md) for v0.1–v0.3 milestones.

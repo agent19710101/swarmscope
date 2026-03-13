@@ -197,6 +197,22 @@ func TestBuildAgentStats(t *testing.T) {
 	}
 }
 
+func TestApplyLimit(t *testing.T) {
+	events := []Event{{Agent: "a"}, {Agent: "b"}, {Agent: "c"}, {Agent: "d"}}
+
+	if got := applyLimit(events, 0, false); len(got) != 4 {
+		t.Fatalf("limit=0 should keep all events, got %d", len(got))
+	}
+
+	if got := applyLimit(events, 2, false); len(got) != 2 || got[0].Agent != "a" || got[1].Agent != "b" {
+		t.Fatalf("unexpected head limit result: %+v", got)
+	}
+
+	if got := applyLimit(events, 2, true); len(got) != 2 || got[0].Agent != "c" || got[1].Agent != "d" {
+		t.Fatalf("unexpected tail limit result: %+v", got)
+	}
+}
+
 func TestParseInputPaths(t *testing.T) {
 	paths, err := parseInputPaths(" ./a.jsonl,./b.jsonl , ")
 	if err != nil {
