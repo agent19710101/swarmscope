@@ -1,0 +1,4 @@
+{"ts":"2026-03-13T01:10:00Z","agent":"planner","action":"plan","status":"ok","message":"decomposed issue #42"}
+{"ts":"2026-03-13T01:10:03Z","agent":"coder-a","action":"edit","status":"ok","message":"updated parser"}
+{"ts":"2026-03-13T01:10:06Z","agent":"coder-b","action":"test","status":"fail","message":"go test ./... failed"}
+{"ts":"2026-03-13T01:10:09Z","agent":"reviewer","action":"review","status":"ok","message":"requested edge-case fix"}
