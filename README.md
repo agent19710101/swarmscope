@@ -124,7 +124,7 @@ Example mapping profile:
 Early but usable (v0.x). Current focus:
 - robust log normalization
 - better CLI filters (absolute RFC3339 + relative `--last` windows, per-agent drill-down)
-- test coverage on parsing and summaries
+- test coverage on parsing, summaries, and CLI output contracts
 
 ## Roadmap
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"compress/gzip"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -414,4 +415,98 @@ func TestLoadParserProfileStrictUsesMapWhenCLIUnset(t *testing.T) {
 	if !profile.Strict {
 		t.Fatal("expected strict=true from map profile when CLI flag is not set")
 	}
+}
+
+func TestRunFeedJSONContract(t *testing.T) {
+	dir := t.TempDir()
+	input := filepath.Join(dir, "run.jsonl")
+	content := strings.Join([]string{
+		`{"ts":"2026-03-13T01:10:00Z","agent":"planner","action":"plan","status":"ok","message":"prepared"}`,
+		`{"ts":"2026-03-13T01:10:01Z","agent":"coder","action":"edit","status":"ok","message":"changed"}`,
+	}, "\n") + "\n"
+	if err := os.WriteFile(input, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := captureStdout(func() error {
+		return runFeed([]string{"--input", input, "--format", "json", "--agent", "planner"})
+	})
+	if err != nil {
+		t.Fatalf("runFeed error: %v", err)
+	}
+	if !strings.Contains(out, `"Agent": "planner"`) {
+		t.Fatalf("expected planner event in JSON output, got: %s", out)
+	}
+	if strings.Contains(out, `"Agent": "coder"`) {
+		t.Fatalf("did not expect coder event in filtered JSON output, got: %s", out)
+	}
+}
+
+func TestRunStatsJSONEmptyContract(t *testing.T) {
+	dir := t.TempDir()
+	input := filepath.Join(dir, "run.jsonl")
+	content := "{\"ts\":\"2026-03-13T01:10:00Z\",\"agent\":\"planner\",\"action\":\"plan\",\"status\":\"ok\",\"message\":\"prepared\"}\n"
+	if err := os.WriteFile(input, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := captureStdout(func() error {
+		return runStats([]string{"--input", input, "--format", "json", "--agent", "missing-agent"})
+	})
+	if err != nil {
+		t.Fatalf("runStats error: %v", err)
+	}
+	if !strings.Contains(out, `"events": 0`) {
+		t.Fatalf("expected zero-events JSON contract when filters remove all events, got: %q", out)
+	}
+}
+
+func TestRunAgentTableContract(t *testing.T) {
+	dir := t.TempDir()
+	input := filepath.Join(dir, "run.jsonl")
+	content := strings.Join([]string{
+		`{"ts":"2026-03-13T01:10:00Z","agent":"planner","action":"plan","status":"ok","message":"m1"}`,
+		`{"ts":"2026-03-13T01:10:01Z","agent":"planner","action":"edit","status":"ok","message":"m2"}`,
+		`{"ts":"2026-03-13T01:10:02Z","agent":"reviewer","action":"test","status":"warn","message":"m3"}`,
+	}, "\n") + "\n"
+	if err := os.WriteFile(input, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := captureStdout(func() error {
+		return runAgent([]string{"--input", input, "--format", "table"})
+	})
+	if err != nil {
+		t.Fatalf("runAgent error: %v", err)
+	}
+	if !strings.Contains(out, "agents:") {
+		t.Fatalf("expected table header, got: %q", out)
+	}
+	if !strings.Contains(out, "planner") {
+		t.Fatalf("expected planner row, got: %q", out)
+	}
+	if !strings.Contains(out, "reviewer") {
+		t.Fatalf("expected reviewer row, got: %q", out)
+	}
+}
+
+func captureStdout(fn func() error) (string, error) {
+	orig := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		return "", err
+	}
+	os.Stdout = w
+
+	runErr := fn()
+	closeErr := w.Close()
+	os.Stdout = orig
+	if closeErr != nil {
+		return "", closeErr
+	}
+	bb, readErr := io.ReadAll(r)
+	if readErr != nil {
+		return "", readErr
+	}
+	return string(bb), runErr
 }
