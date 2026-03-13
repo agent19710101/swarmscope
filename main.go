@@ -94,7 +94,7 @@ func runFeed(args []string) error {
 	if err != nil {
 		return fmt.Errorf("feed: %w", err)
 	}
-	profile, err := loadParserProfile(*mapPath, *strict)
+	profile, err := loadParserProfile(*mapPath, *strict, boolFlagWasProvided(fs, "strict"))
 	if err != nil {
 		return fmt.Errorf("feed: %w", err)
 	}
@@ -154,7 +154,7 @@ func runStats(args []string) error {
 	if err != nil {
 		return fmt.Errorf("stats: %w", err)
 	}
-	profile, err := loadParserProfile(*mapPath, *strict)
+	profile, err := loadParserProfile(*mapPath, *strict, boolFlagWasProvided(fs, "strict"))
 	if err != nil {
 		return fmt.Errorf("stats: %w", err)
 	}
@@ -252,7 +252,7 @@ func runAgent(args []string) error {
 		return fmt.Errorf("agent: %w", err)
 	}
 
-	profile, err := loadParserProfile(*mapPath, *strict)
+	profile, err := loadParserProfile(*mapPath, *strict, boolFlagWasProvided(fs, "strict"))
 	if err != nil {
 		return fmt.Errorf("agent: %w", err)
 	}
@@ -383,9 +383,8 @@ func defaultParserProfile() parserProfile {
 	}
 }
 
-func loadParserProfile(path string, strict bool) (parserProfile, error) {
+func loadParserProfile(path string, strict bool, strictSet bool) (parserProfile, error) {
 	profile := defaultParserProfile()
-	profile.Strict = strict
 	if strings.TrimSpace(path) == "" {
 		return profile, nil
 	}
@@ -408,7 +407,20 @@ func loadParserProfile(path string, strict bool) (parserProfile, error) {
 	if cfg.Strict != nil {
 		profile.Strict = *cfg.Strict
 	}
+	if strictSet {
+		profile.Strict = strict
+	}
 	return profile, nil
+}
+
+func boolFlagWasProvided(fs *flag.FlagSet, name string) bool {
+	provided := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			provided = true
+		}
+	})
+	return provided
 }
 
 func mergeKeys(defaults, custom []string, replace bool) []string {

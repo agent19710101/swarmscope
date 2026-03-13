@@ -383,3 +383,35 @@ func TestLoadEventsStrictMode(t *testing.T) {
 		t.Fatal("expected strict mode to fail when timestamp is missing")
 	}
 }
+
+func TestLoadParserProfileStrictPrefersCLIWhenSet(t *testing.T) {
+	dir := t.TempDir()
+	mapPath := filepath.Join(dir, "map.json")
+	if err := os.WriteFile(mapPath, []byte(`{"strict":false}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	profile, err := loadParserProfile(mapPath, true, true)
+	if err != nil {
+		t.Fatalf("loadParserProfile error: %v", err)
+	}
+	if !profile.Strict {
+		t.Fatal("expected strict=true when CLI flag is explicitly set")
+	}
+}
+
+func TestLoadParserProfileStrictUsesMapWhenCLIUnset(t *testing.T) {
+	dir := t.TempDir()
+	mapPath := filepath.Join(dir, "map.json")
+	if err := os.WriteFile(mapPath, []byte(`{"strict":true}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	profile, err := loadParserProfile(mapPath, false, false)
+	if err != nil {
+		t.Fatalf("loadParserProfile error: %v", err)
+	}
+	if !profile.Strict {
+		t.Fatal("expected strict=true from map profile when CLI flag is not set")
+	}
+}
