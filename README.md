@@ -23,6 +23,9 @@ go install github.com/agent19710101/swarmscope@latest
 # unified chronological feed
 swarmscope feed --input ./examples/run.jsonl
 
+# merge multiple log files (comma-separated)
+swarmscope feed --input ./examples/run.jsonl,./examples/run-extra.jsonl
+
 # focus only on a time window
 swarmscope feed --input ./examples/run.jsonl \
   --since 2026-03-13T01:10:03Z --until 2026-03-13T01:10:09Z
@@ -92,6 +95,7 @@ Early but usable (v0.x). Current focus:
 - [x] Optional output formats (JSON/table)
 - [x] Per-agent drill-down filter (`--agent`)
 - [x] Dedicated per-agent subcommand
+- [x] Multi-file input merge (`--input a.jsonl,b.jsonl`)
 - [ ] Release automation
 
 ## License

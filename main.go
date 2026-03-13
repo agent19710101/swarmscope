@@ -50,7 +50,7 @@ func main() {
 
 func runFeed(args []string) error {
 	fs := flag.NewFlagSet("feed", flag.ContinueOnError)
-	input := fs.String("input", "", "input JSON/JSONL file (required)")
+	input := fs.String("input", "", "input JSON/JSONL file(s), comma-separated (required)")
 	limit := fs.Int("limit", 0, "max events to print (0 = all)")
 	format := fs.String("format", "table", "output format: table|json")
 	agent := fs.String("agent", "", "filter by agent name (comma-separated for multiple)")
@@ -63,7 +63,11 @@ func runFeed(args []string) error {
 	if strings.TrimSpace(*input) == "" {
 		return errors.New("feed: --input is required")
 	}
-	events, err := loadEvents(*input)
+	inputs, err := parseInputPaths(*input)
+	if err != nil {
+		return fmt.Errorf("feed: %w", err)
+	}
+	events, err := loadEventsFromPaths(inputs)
 	if err != nil {
 		return err
 	}
@@ -99,7 +103,7 @@ func runFeed(args []string) error {
 
 func runStats(args []string) error {
 	fs := flag.NewFlagSet("stats", flag.ContinueOnError)
-	input := fs.String("input", "", "input JSON/JSONL file (required)")
+	input := fs.String("input", "", "input JSON/JSONL file(s), comma-separated (required)")
 	format := fs.String("format", "table", "output format: table|json")
 	agent := fs.String("agent", "", "filter by agent name (comma-separated for multiple)")
 	since := fs.String("since", "", "only include events at or after RFC3339 timestamp")
@@ -111,7 +115,11 @@ func runStats(args []string) error {
 	if strings.TrimSpace(*input) == "" {
 		return errors.New("stats: --input is required")
 	}
-	events, err := loadEvents(*input)
+	inputs, err := parseInputPaths(*input)
+	if err != nil {
+		return fmt.Errorf("stats: %w", err)
+	}
+	events, err := loadEventsFromPaths(inputs)
 	if err != nil {
 		return err
 	}
@@ -182,7 +190,7 @@ type agentOutput struct {
 
 func runAgent(args []string) error {
 	fs := flag.NewFlagSet("agent", flag.ContinueOnError)
-	input := fs.String("input", "", "input JSON/JSONL file (required)")
+	input := fs.String("input", "", "input JSON/JSONL file(s), comma-separated (required)")
 	format := fs.String("format", "table", "output format: table|json")
 	agent := fs.String("agent", "", "filter by agent name (comma-separated for multiple)")
 	since := fs.String("since", "", "only include events at or after RFC3339 timestamp")
@@ -194,8 +202,12 @@ func runAgent(args []string) error {
 	if strings.TrimSpace(*input) == "" {
 		return errors.New("agent: --input is required")
 	}
+	inputs, err := parseInputPaths(*input)
+	if err != nil {
+		return fmt.Errorf("agent: %w", err)
+	}
 
-	events, err := loadEvents(*input)
+	events, err := loadEventsFromPaths(inputs)
 	if err != nil {
 		return err
 	}
@@ -308,6 +320,37 @@ func buildAgentStats(events []Event) []agentOutput {
 		return out[i].Events > out[j].Events
 	})
 	return out
+}
+
+func parseInputPaths(raw string) ([]string, error) {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		path := strings.TrimSpace(part)
+		if path == "" {
+			continue
+		}
+		out = append(out, path)
+	}
+	if len(out) == 0 {
+		return nil, errors.New("--input must include at least one file path")
+	}
+	return out, nil
+}
+
+func loadEventsFromPaths(paths []string) ([]Event, error) {
+	all := make([]Event, 0)
+	for _, path := range paths {
+		events, err := loadEvents(path)
+		if err != nil {
+			return nil, fmt.Errorf("load %q: %w", path, err)
+		}
+		for i := range events {
+			events[i].Source = path
+		}
+		all = append(all, events...)
+	}
+	return all, nil
 }
 
 func loadEvents(path string) ([]Event, error) {
@@ -561,9 +604,9 @@ func usage() {
 	fmt.Print(`swarmscope - multi-agent run log inspector
 
 Usage:
-  swarmscope feed  --input run.jsonl [--limit N] [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m]
-  swarmscope stats --input run.jsonl [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m]
-  swarmscope agent --input run.jsonl [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m]
+  swarmscope feed  --input run.jsonl[,run2.jsonl] [--limit N] [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m]
+  swarmscope stats --input run.jsonl[,run2.jsonl] [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m]
+  swarmscope agent --input run.jsonl[,run2.jsonl] [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m]
 `)
 }
 

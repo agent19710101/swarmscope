@@ -177,3 +177,44 @@ func TestBuildAgentStats(t *testing.T) {
 		t.Fatalf("unexpected second row: %+v", got[1])
 	}
 }
+
+func TestParseInputPaths(t *testing.T) {
+	paths, err := parseInputPaths(" ./a.jsonl,./b.jsonl , ")
+	if err != nil {
+		t.Fatalf("parseInputPaths error: %v", err)
+	}
+	if len(paths) != 2 {
+		t.Fatalf("want 2 paths, got %d", len(paths))
+	}
+	if paths[0] != "./a.jsonl" || paths[1] != "./b.jsonl" {
+		t.Fatalf("unexpected paths: %+v", paths)
+	}
+
+	if _, err := parseInputPaths(" , "); err == nil {
+		t.Fatal("expected error for empty input list")
+	}
+}
+
+func TestLoadEventsFromPaths(t *testing.T) {
+	dir := t.TempDir()
+	p1 := filepath.Join(dir, "one.jsonl")
+	p2 := filepath.Join(dir, "two.jsonl")
+
+	if err := os.WriteFile(p1, []byte("{\"ts\":\"2026-03-13T01:10:00Z\",\"agent\":\"a\",\"action\":\"plan\",\"status\":\"ok\",\"message\":\"m1\"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p2, []byte("{\"ts\":\"2026-03-13T01:10:01Z\",\"agent\":\"b\",\"action\":\"test\",\"status\":\"ok\",\"message\":\"m2\"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := loadEventsFromPaths([]string{p1, p2})
+	if err != nil {
+		t.Fatalf("loadEventsFromPaths error: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("want 2 events, got %d", len(events))
+	}
+	if events[0].Source != p1 || events[1].Source != p2 {
+		t.Fatalf("unexpected source fields: %+v", events)
+	}
+}
