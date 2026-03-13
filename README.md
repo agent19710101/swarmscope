@@ -1,6 +1,6 @@
 # swarmscope
 
-`swarmscope` is a Go CLI for **watching and summarizing multi-agent run logs** from mixed JSON/JSONL sources.
+`swarmscope` is a Go CLI for **watching and summarizing multi-agent run logs** from mixed JSON/JSONL sources (including `.jsonl.gz`).
 
 It helps answer:
 - What did each agent do, in order?
@@ -28,6 +28,9 @@ swarmscope feed --input ./examples/run.jsonl --limit 20 --tail
 
 # merge multiple log files (comma-separated)
 swarmscope feed --input ./examples/run.jsonl,./examples/run-extra.jsonl
+
+# read compressed JSONL directly
+swarmscope feed --input ./logs/run.jsonl.gz
 
 # focus only on a time window
 swarmscope feed --input ./examples/run.jsonl \
@@ -100,6 +103,7 @@ Early but usable (v0.x). Current focus:
 - [x] Dedicated per-agent subcommand
 - [x] Multi-file input merge (`--input a.jsonl,b.jsonl`)
 - [x] Tail mode for recent feed slices (`--limit N --tail`)
+- [x] Gzip-compressed JSONL input (`.jsonl.gz`)
 - [ ] Release automation
 
 See also: [`RELEASE_PLAN.md`](./RELEASE_PLAN.md) for v0.1–v0.3 milestones.

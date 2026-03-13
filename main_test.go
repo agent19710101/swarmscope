@@ -1,6 +1,7 @@
 package main
 
 import (
+	"compress/gzip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,6 +27,37 @@ func TestLoadEventsJSONL(t *testing.T) {
 	}
 	if events[1].Agent != "b" || events[1].Action != "test" || events[1].Status != "fail" {
 		t.Fatalf("unexpected normalization: %+v", events[1])
+	}
+}
+
+func TestLoadEventsJSONLGzip(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "run.jsonl.gz")
+	f, err := os.Create(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gz := gzip.NewWriter(f)
+	_, err = gz.Write([]byte("{\"ts\":\"2026-03-13T01:10:00Z\",\"agent\":\"a\",\"action\":\"plan\",\"status\":\"ok\",\"message\":\"m1\"}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := loadEvents(p)
+	if err != nil {
+		t.Fatalf("loadEvents error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("want 1 event, got %d", len(events))
+	}
+	if events[0].Agent != "a" || events[0].Action != "plan" {
+		t.Fatalf("unexpected normalization: %+v", events[0])
 	}
 }
 

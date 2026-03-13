@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -353,20 +354,28 @@ func loadEventsFromPaths(paths []string) ([]Event, error) {
 }
 
 func loadEvents(path string) ([]Event, error) {
-	f, err := os.Open(path)
+	r, err := openInputReader(path)
 	if err != nil {
 		return nil, fmt.Errorf("open input: %w", err)
 	}
-	defer f.Close()
-
-	events, err := decodeJSONL(f)
+	events, err := decodeJSONL(r)
+	_ = r.Close()
 	if err == nil {
 		return events, nil
 	}
-	if !errors.Is(err, io.EOF) {
-		if events2, err2 := decodeJSONArray(path); err2 == nil {
-			return events2, nil
-		}
+
+	if errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("parse input as JSONL/JSON array: %w", err)
+	}
+
+	r2, err2 := openInputReader(path)
+	if err2 != nil {
+		return nil, fmt.Errorf("open input: %w", err2)
+	}
+	defer r2.Close()
+	events2, err2 := decodeJSONArray(r2)
+	if err2 == nil {
+		return events2, nil
 	}
 	return nil, fmt.Errorf("parse input as JSONL/JSON array: %w", err)
 }
@@ -398,13 +407,9 @@ func decodeJSONL(r io.Reader) ([]Event, error) {
 	return events, nil
 }
 
-func decodeJSONArray(path string) ([]Event, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
+func decodeJSONArray(r io.Reader) ([]Event, error) {
 	var raw []map[string]any
-	if err := json.Unmarshal(b, &raw); err != nil {
+	if err := json.NewDecoder(r).Decode(&raw); err != nil {
 		return nil, err
 	}
 	events := make([]Event, 0, len(raw))
@@ -417,6 +422,37 @@ func decodeJSONArray(path string) ([]Event, error) {
 		events = append(events, ev)
 	}
 	return events, nil
+}
+
+func openInputReader(path string) (io.ReadCloser, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	if strings.HasSuffix(strings.ToLower(path), ".gz") {
+		gz, err := gzip.NewReader(f)
+		if err != nil {
+			_ = f.Close()
+			return nil, err
+		}
+		return &multiReadCloser{Reader: gz, closers: []io.Closer{gz, f}}, nil
+	}
+	return f, nil
+}
+
+type multiReadCloser struct {
+	io.Reader
+	closers []io.Closer
+}
+
+func (m *multiReadCloser) Close() error {
+	var firstErr error
+	for _, c := range m.closers {
+		if err := c.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
 }
 
 func parseOne(line []byte) (Event, error) {
