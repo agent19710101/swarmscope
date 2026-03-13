@@ -77,6 +77,34 @@ func TestApplyTimeWindowErrors(t *testing.T) {
 	}
 }
 
+func TestNormalizeTimeWindowArgsLast(t *testing.T) {
+	now := time.Date(2026, 3, 13, 2, 30, 0, 0, time.UTC)
+	since, until, err := normalizeTimeWindowArgs("", "", "30m", now)
+	if err != nil {
+		t.Fatalf("normalizeTimeWindowArgs error: %v", err)
+	}
+	if since != "2026-03-13T02:00:00Z" {
+		t.Fatalf("unexpected since: %s", since)
+	}
+	if until != "2026-03-13T02:30:00Z" {
+		t.Fatalf("unexpected until: %s", until)
+	}
+}
+
+func TestNormalizeTimeWindowArgsErrors(t *testing.T) {
+	now := time.Date(2026, 3, 13, 2, 30, 0, 0, time.UTC)
+
+	if _, _, err := normalizeTimeWindowArgs("2026-03-13T02:00:00Z", "", "30m", now); err == nil {
+		t.Fatal("expected conflict error for --last and --since")
+	}
+	if _, _, err := normalizeTimeWindowArgs("", "", "-5m", now); err == nil {
+		t.Fatal("expected positive duration error")
+	}
+	if _, _, err := normalizeTimeWindowArgs("", "", "banana", now); err == nil {
+		t.Fatal("expected parse error")
+	}
+}
+
 func TestBuildStats(t *testing.T) {
 	events := []Event{
 		{Time: time.Date(2026, 3, 13, 1, 0, 0, 0, time.UTC), Agent: "a", Action: "plan", Status: "ok"},

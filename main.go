@@ -52,6 +52,7 @@ func runFeed(args []string) error {
 	agent := fs.String("agent", "", "filter by agent name (comma-separated for multiple)")
 	since := fs.String("since", "", "only include events at or after RFC3339 timestamp")
 	until := fs.String("until", "", "only include events at or before RFC3339 timestamp")
+	last := fs.String("last", "", "only include events from the most recent duration (e.g. 30m, 2h)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -62,7 +63,11 @@ func runFeed(args []string) error {
 	if err != nil {
 		return err
 	}
-	events, err = applyTimeWindow(events, *since, *until)
+	sinceRaw, untilRaw, err := normalizeTimeWindowArgs(*since, *until, *last, time.Now().UTC())
+	if err != nil {
+		return fmt.Errorf("feed: %w", err)
+	}
+	events, err = applyTimeWindow(events, sinceRaw, untilRaw)
 	if err != nil {
 		return fmt.Errorf("feed: %w", err)
 	}
@@ -95,6 +100,7 @@ func runStats(args []string) error {
 	agent := fs.String("agent", "", "filter by agent name (comma-separated for multiple)")
 	since := fs.String("since", "", "only include events at or after RFC3339 timestamp")
 	until := fs.String("until", "", "only include events at or before RFC3339 timestamp")
+	last := fs.String("last", "", "only include events from the most recent duration (e.g. 30m, 2h)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -105,7 +111,11 @@ func runStats(args []string) error {
 	if err != nil {
 		return err
 	}
-	events, err = applyTimeWindow(events, *since, *until)
+	sinceRaw, untilRaw, err := normalizeTimeWindowArgs(*since, *until, *last, time.Now().UTC())
+	if err != nil {
+		return fmt.Errorf("stats: %w", err)
+	}
+	events, err = applyTimeWindow(events, sinceRaw, untilRaw)
 	if err != nil {
 		return fmt.Errorf("stats: %w", err)
 	}
@@ -324,6 +334,31 @@ func printCountTable(title string, counts map[string]int) {
 	}
 }
 
+func normalizeTimeWindowArgs(sinceRaw, untilRaw, lastRaw string, now time.Time) (string, string, error) {
+	sinceRaw = strings.TrimSpace(sinceRaw)
+	untilRaw = strings.TrimSpace(untilRaw)
+	lastRaw = strings.TrimSpace(lastRaw)
+
+	if lastRaw == "" {
+		return sinceRaw, untilRaw, nil
+	}
+	if sinceRaw != "" || untilRaw != "" {
+		return "", "", errors.New("--last cannot be combined with --since or --until")
+	}
+
+	d, err := time.ParseDuration(lastRaw)
+	if err != nil {
+		return "", "", fmt.Errorf("invalid --last value %q: %w", lastRaw, err)
+	}
+	if d <= 0 {
+		return "", "", errors.New("--last must be a positive duration")
+	}
+
+	end := now.UTC()
+	start := end.Add(-d)
+	return start.Format(time.RFC3339), end.Format(time.RFC3339), nil
+}
+
 func applyTimeWindow(events []Event, sinceRaw, untilRaw string) ([]Event, error) {
 	var since, until time.Time
 	var err error
@@ -408,8 +443,8 @@ func usage() {
 	fmt.Print(`swarmscope - multi-agent run log inspector
 
 Usage:
-  swarmscope feed  --input run.jsonl [--limit N] [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339]
-  swarmscope stats --input run.jsonl [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339]
+  swarmscope feed  --input run.jsonl [--limit N] [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m]
+  swarmscope stats --input run.jsonl [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m]
 `)
 }
 

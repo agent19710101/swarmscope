@@ -27,6 +27,9 @@ swarmscope feed --input ./examples/run.jsonl
 swarmscope feed --input ./examples/run.jsonl \
   --since 2026-03-13T01:10:03Z --until 2026-03-13T01:10:09Z
 
+# or use a relative window from "now"
+swarmscope stats --input ./examples/run.jsonl --last 30m
+
 # drill down to one (or more) agents
 swarmscope feed --input ./examples/run.jsonl --agent coder-a
 swarmscope stats --input ./examples/run.jsonl --agent coder-a,reviewer
@@ -73,7 +76,7 @@ agents:
 
 Early but usable (v0.x). Current focus:
 - robust log normalization
-- better CLI filters (time windows + per-agent drill-down)
+- better CLI filters (absolute RFC3339 + relative `--last` windows, per-agent drill-down)
 - test coverage on parsing and summaries
 
 ## Roadmap
@@ -81,6 +84,7 @@ Early but usable (v0.x). Current focus:
 - [x] Feed view for JSON/JSONL logs
 - [x] Summary stats by agent/action/status
 - [x] RFC3339 time-window filtering (`--since`, `--until`)
+- [x] Relative time-window filtering (`--last 30m`)
 - [x] Optional output formats (JSON/table)
 - [x] Per-agent drill-down filter (`--agent`)
 - [ ] Dedicated per-agent subcommand
