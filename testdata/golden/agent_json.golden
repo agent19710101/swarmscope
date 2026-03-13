@@ -1,0 +1,18 @@
+[
+  {
+    "agent": "planner",
+    "events": 2,
+    "firstSeen": "2026-03-13T01:10:00Z",
+    "lastSeen": "2026-03-13T01:10:01Z",
+    "actions": 2,
+    "statuses": 1
+  },
+  {
+    "agent": "reviewer",
+    "events": 1,
+    "firstSeen": "2026-03-13T01:10:02Z",
+    "lastSeen": "2026-03-13T01:10:02Z",
+    "actions": 1,
+    "statuses": 1
+  }
+]

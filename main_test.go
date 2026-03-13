@@ -417,7 +417,7 @@ func TestLoadParserProfileStrictUsesMapWhenCLIUnset(t *testing.T) {
 	}
 }
 
-func TestRunFeedJSONContract(t *testing.T) {
+func TestRunFeedJSONContractGolden(t *testing.T) {
 	dir := t.TempDir()
 	input := filepath.Join(dir, "run.jsonl")
 	content := strings.Join([]string{
@@ -434,15 +434,10 @@ func TestRunFeedJSONContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runFeed error: %v", err)
 	}
-	if !strings.Contains(out, `"Agent": "planner"`) {
-		t.Fatalf("expected planner event in JSON output, got: %s", out)
-	}
-	if strings.Contains(out, `"Agent": "coder"`) {
-		t.Fatalf("did not expect coder event in filtered JSON output, got: %s", out)
-	}
+	assertGolden(t, "feed_json.golden", normalizeGoldenOutput(out, dir))
 }
 
-func TestRunStatsJSONEmptyContract(t *testing.T) {
+func TestRunStatsJSONEmptyContractGolden(t *testing.T) {
 	dir := t.TempDir()
 	input := filepath.Join(dir, "run.jsonl")
 	content := "{\"ts\":\"2026-03-13T01:10:00Z\",\"agent\":\"planner\",\"action\":\"plan\",\"status\":\"ok\",\"message\":\"prepared\"}\n"
@@ -456,12 +451,10 @@ func TestRunStatsJSONEmptyContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runStats error: %v", err)
 	}
-	if !strings.Contains(out, `"events": 0`) {
-		t.Fatalf("expected zero-events JSON contract when filters remove all events, got: %q", out)
-	}
+	assertGolden(t, "stats_json_empty.golden", normalizeGoldenOutput(out, dir))
 }
 
-func TestRunAgentTableContract(t *testing.T) {
+func TestRunAgentJSONContractGolden(t *testing.T) {
 	dir := t.TempDir()
 	input := filepath.Join(dir, "run.jsonl")
 	content := strings.Join([]string{
@@ -474,20 +467,12 @@ func TestRunAgentTableContract(t *testing.T) {
 	}
 
 	out, err := captureStdout(func() error {
-		return runAgent([]string{"--input", input, "--format", "table"})
+		return runAgent([]string{"--input", input, "--format", "json"})
 	})
 	if err != nil {
 		t.Fatalf("runAgent error: %v", err)
 	}
-	if !strings.Contains(out, "agents:") {
-		t.Fatalf("expected table header, got: %q", out)
-	}
-	if !strings.Contains(out, "planner") {
-		t.Fatalf("expected planner row, got: %q", out)
-	}
-	if !strings.Contains(out, "reviewer") {
-		t.Fatalf("expected reviewer row, got: %q", out)
-	}
+	assertGolden(t, "agent_json.golden", normalizeGoldenOutput(out, dir))
 }
 
 func captureStdout(fn func() error) (string, error) {
@@ -509,4 +494,22 @@ func captureStdout(fn func() error) (string, error) {
 		return "", readErr
 	}
 	return string(bb), runErr
+}
+
+func normalizeGoldenOutput(out, tempDir string) string {
+	normalized := strings.ReplaceAll(out, tempDir, "$TMPDIR")
+	return strings.ReplaceAll(normalized, "\\", "/")
+}
+
+func assertGolden(t *testing.T, name, got string) {
+	t.Helper()
+	path := filepath.Join("testdata", "golden", name)
+	wantBytes, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read golden file: %v", err)
+	}
+	want := string(wantBytes)
+	if got != want {
+		t.Fatalf("golden mismatch for %s\n--- want ---\n%s\n--- got ---\n%s", name, want, got)
+	}
 }
