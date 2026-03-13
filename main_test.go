@@ -43,3 +43,36 @@ func TestParseOneDefaults(t *testing.T) {
 		t.Fatal("fallback time too old")
 	}
 }
+
+func TestApplyTimeWindow(t *testing.T) {
+	events := []Event{
+		{Time: time.Date(2026, 3, 13, 1, 0, 0, 0, time.UTC), Agent: "a"},
+		{Time: time.Date(2026, 3, 13, 1, 15, 0, 0, time.UTC), Agent: "b"},
+		{Time: time.Date(2026, 3, 13, 1, 30, 0, 0, time.UTC), Agent: "c"},
+	}
+
+	got, err := applyTimeWindow(events, "2026-03-13T01:10:00Z", "2026-03-13T01:30:00Z")
+	if err != nil {
+		t.Fatalf("applyTimeWindow error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2 events, got %d", len(got))
+	}
+	if got[0].Agent != "b" || got[1].Agent != "c" {
+		t.Fatalf("unexpected events: %+v", got)
+	}
+}
+
+func TestApplyTimeWindowErrors(t *testing.T) {
+	events := []Event{{Time: time.Date(2026, 3, 13, 1, 0, 0, 0, time.UTC)}}
+
+	if _, err := applyTimeWindow(events, "nope", ""); err == nil {
+		t.Fatal("expected invalid since error")
+	}
+	if _, err := applyTimeWindow(events, "", "nope"); err == nil {
+		t.Fatal("expected invalid until error")
+	}
+	if _, err := applyTimeWindow(events, "2026-03-13T02:00:00Z", "2026-03-13T01:00:00Z"); err == nil {
+		t.Fatal("expected since > until error")
+	}
+}

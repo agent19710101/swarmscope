@@ -48,6 +48,8 @@ func runFeed(args []string) error {
 	fs := flag.NewFlagSet("feed", flag.ContinueOnError)
 	input := fs.String("input", "", "input JSON/JSONL file (required)")
 	limit := fs.Int("limit", 0, "max events to print (0 = all)")
+	since := fs.String("since", "", "only include events at or after RFC3339 timestamp")
+	until := fs.String("until", "", "only include events at or before RFC3339 timestamp")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -57,6 +59,10 @@ func runFeed(args []string) error {
 	events, err := loadEvents(*input)
 	if err != nil {
 		return err
+	}
+	events, err = applyTimeWindow(events, *since, *until)
+	if err != nil {
+		return fmt.Errorf("feed: %w", err)
 	}
 	sort.Slice(events, func(i, j int) bool { return events[i].Time.Before(events[j].Time) })
 	if *limit > 0 && *limit < len(events) {
@@ -73,6 +79,8 @@ func runFeed(args []string) error {
 func runStats(args []string) error {
 	fs := flag.NewFlagSet("stats", flag.ContinueOnError)
 	input := fs.String("input", "", "input JSON/JSONL file (required)")
+	since := fs.String("since", "", "only include events at or after RFC3339 timestamp")
+	until := fs.String("until", "", "only include events at or before RFC3339 timestamp")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -82,6 +90,10 @@ func runStats(args []string) error {
 	events, err := loadEvents(*input)
 	if err != nil {
 		return err
+	}
+	events, err = applyTimeWindow(events, *since, *until)
+	if err != nil {
+		return fmt.Errorf("stats: %w", err)
 	}
 	if len(events) == 0 {
 		fmt.Println("no events found")
@@ -253,6 +265,43 @@ func printCountTable(title string, counts map[string]int) {
 	}
 }
 
+func applyTimeWindow(events []Event, sinceRaw, untilRaw string) ([]Event, error) {
+	var since, until time.Time
+	var err error
+
+	if strings.TrimSpace(sinceRaw) != "" {
+		since, err = time.Parse(time.RFC3339, sinceRaw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --since value %q: %w", sinceRaw, err)
+		}
+		since = since.UTC()
+	}
+
+	if strings.TrimSpace(untilRaw) != "" {
+		until, err = time.Parse(time.RFC3339, untilRaw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --until value %q: %w", untilRaw, err)
+		}
+		until = until.UTC()
+	}
+
+	if !since.IsZero() && !until.IsZero() && since.After(until) {
+		return nil, errors.New("--since cannot be later than --until")
+	}
+
+	out := events[:0]
+	for _, ev := range events {
+		if !since.IsZero() && ev.Time.Before(since) {
+			continue
+		}
+		if !until.IsZero() && ev.Time.After(until) {
+			continue
+		}
+		out = append(out, ev)
+	}
+	return out, nil
+}
+
 func truncate(s string, n int) string {
 	r := []rune(s)
 	if len(r) <= n {
@@ -268,8 +317,8 @@ func usage() {
 	fmt.Print(`swarmscope - multi-agent run log inspector
 
 Usage:
-  swarmscope feed  --input run.jsonl [--limit N]
-  swarmscope stats --input run.jsonl
+  swarmscope feed  --input run.jsonl [--limit N] [--since RFC3339] [--until RFC3339]
+  swarmscope stats --input run.jsonl [--since RFC3339] [--until RFC3339]
 `)
 }
 

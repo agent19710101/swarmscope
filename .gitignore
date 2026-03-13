@@ -15,3 +15,6 @@
 # IDE
 .idea/
 .vscode/
+
+# Local build artifact
+swarmscope
