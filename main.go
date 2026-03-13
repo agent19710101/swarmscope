@@ -49,6 +49,7 @@ func runFeed(args []string) error {
 	input := fs.String("input", "", "input JSON/JSONL file (required)")
 	limit := fs.Int("limit", 0, "max events to print (0 = all)")
 	format := fs.String("format", "table", "output format: table|json")
+	agent := fs.String("agent", "", "filter by agent name (comma-separated for multiple)")
 	since := fs.String("since", "", "only include events at or after RFC3339 timestamp")
 	until := fs.String("until", "", "only include events at or before RFC3339 timestamp")
 	if err := fs.Parse(args); err != nil {
@@ -65,6 +66,7 @@ func runFeed(args []string) error {
 	if err != nil {
 		return fmt.Errorf("feed: %w", err)
 	}
+	events = applyAgentFilter(events, *agent)
 	sort.Slice(events, func(i, j int) bool { return events[i].Time.Before(events[j].Time) })
 	if *limit > 0 && *limit < len(events) {
 		events = events[:*limit]
@@ -90,6 +92,7 @@ func runStats(args []string) error {
 	fs := flag.NewFlagSet("stats", flag.ContinueOnError)
 	input := fs.String("input", "", "input JSON/JSONL file (required)")
 	format := fs.String("format", "table", "output format: table|json")
+	agent := fs.String("agent", "", "filter by agent name (comma-separated for multiple)")
 	since := fs.String("since", "", "only include events at or after RFC3339 timestamp")
 	until := fs.String("until", "", "only include events at or before RFC3339 timestamp")
 	if err := fs.Parse(args); err != nil {
@@ -106,6 +109,7 @@ func runStats(args []string) error {
 	if err != nil {
 		return fmt.Errorf("stats: %w", err)
 	}
+	events = applyAgentFilter(events, *agent)
 	if len(events) == 0 {
 		if strings.EqualFold(strings.TrimSpace(*format), "json") {
 			enc := json.NewEncoder(os.Stdout)
@@ -357,6 +361,38 @@ func applyTimeWindow(events []Event, sinceRaw, untilRaw string) ([]Event, error)
 	return out, nil
 }
 
+func applyAgentFilter(events []Event, raw string) []Event {
+	agents := parseAgentSet(raw)
+	if len(agents) == 0 {
+		return events
+	}
+
+	out := events[:0]
+	for _, ev := range events {
+		if _, ok := agents[strings.ToLower(ev.Agent)]; ok {
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
+func parseAgentSet(raw string) map[string]struct{} {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	out := map[string]struct{}{}
+	for _, part := range strings.Split(raw, ",") {
+		name := strings.ToLower(strings.TrimSpace(part))
+		if name != "" {
+			out[name] = struct{}{}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 func truncate(s string, n int) string {
 	r := []rune(s)
 	if len(r) <= n {
@@ -372,8 +408,8 @@ func usage() {
 	fmt.Print(`swarmscope - multi-agent run log inspector
 
 Usage:
-  swarmscope feed  --input run.jsonl [--limit N] [--format table|json] [--since RFC3339] [--until RFC3339]
-  swarmscope stats --input run.jsonl [--format table|json] [--since RFC3339] [--until RFC3339]
+  swarmscope feed  --input run.jsonl [--limit N] [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339]
+  swarmscope stats --input run.jsonl [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339]
 `)
 }
 

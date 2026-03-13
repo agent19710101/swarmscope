@@ -98,3 +98,28 @@ func TestBuildStats(t *testing.T) {
 		t.Fatalf("unexpected counts: %+v", got)
 	}
 }
+
+func TestApplyAgentFilter(t *testing.T) {
+	events := []Event{{Agent: "Planner"}, {Agent: "coder-a"}, {Agent: "reviewer"}}
+
+	got := applyAgentFilter(events, "planner, reviewer")
+	if len(got) != 2 {
+		t.Fatalf("want 2 events, got %d", len(got))
+	}
+	if got[0].Agent != "Planner" || got[1].Agent != "reviewer" {
+		t.Fatalf("unexpected filtered events: %+v", got)
+	}
+}
+
+func TestParseAgentSet(t *testing.T) {
+	set := parseAgentSet(" planner, ,CODER-A  ")
+	if len(set) != 2 {
+		t.Fatalf("want 2 agents, got %d", len(set))
+	}
+	if _, ok := set["planner"]; !ok {
+		t.Fatal("expected planner in set")
+	}
+	if _, ok := set["coder-a"]; !ok {
+		t.Fatal("expected coder-a in set")
+	}
+}
