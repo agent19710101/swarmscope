@@ -12,12 +12,19 @@ jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        goos: [linux, darwin, windows]
-        goarch: [amd64, arm64]
-        exclude:
-          - goos: windows
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
             goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -27,17 +34,14 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
         run: |
           mkdir -p dist
           ext=""
           if [ "$GOOS" = "windows" ]; then ext=".exe"; fi
           bin="swarmscope_${GOOS}_${GOARCH}${ext}"
-          go build -o "dist/${bin}" .
-      - name: checksums
-        run: |
-          cd dist
-          sha256sum * > checksums-${{ matrix.goos }}-${{ matrix.goarch }}.txt
-      - name: upload artifacts
+          go build -trimpath -ldflags='-s -w -buildid=' -o "dist/${bin}" .
+      - name: upload binaries
         uses: actions/upload-artifact@v4
         with:
           name: swarmscope-${{ matrix.goos }}-${{ matrix.goarch }}
@@ -53,7 +57,11 @@ jobs:
       - name: flatten artifacts
         run: |
           mkdir -p dist
-          find artifacts -type f -exec cp {} dist/ \;
+          find artifacts -type f -name 'swarmscope_*' -exec cp {} dist/ \;
+      - name: generate checksums
+        run: |
+          cd dist
+          sha256sum swarmscope_* > checksums.txt
       - name: create release
         uses: softprops/action-gh-release@v2
         with:

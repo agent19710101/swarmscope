@@ -9,7 +9,7 @@ Scope:
 - multi-file merge, time-window filters, agent filter
 - parser hardening and deterministic ordering
 - CI checks (fmt/test/staticcheck)
-- first tagged release with checksums
+- first tagged release with checksums ✅
 
 Exit criteria:
 - `go test ./...` green on CI
@@ -37,6 +37,7 @@ Goal: easier embedding in scripts and pipelines.
 Scope:
 - machine-readable summaries for all commands
 - structured error codes
+- GitHub Actions tag-release automation (matrix binaries + checksums + release notes) ✅
 - optional GitHub Actions/CI summary formatter
 - package/distribution polish (Homebrew/Scoop candidate)
 
