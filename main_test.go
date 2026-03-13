@@ -421,6 +421,26 @@ func TestLoadEventsStrictMode(t *testing.T) {
 	}
 }
 
+func TestLoadEventsFallbackReportsJSONArrayError(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "broken-array.json")
+	content := "[{\"ts\":\"2026-03-13T01:10:00Z\",\"agent\":\"a\",\"action\":\"plan\",\"status\":\"ok\"},]"
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadEvents(p, defaultParserProfile())
+	if err == nil {
+		t.Fatal("expected loadEvents to fail for malformed JSON array")
+	}
+	if !strings.Contains(err.Error(), "json array error") {
+		t.Fatalf("expected json array error context, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "invalid character") {
+		t.Fatalf("expected JSON parser error details, got: %v", err)
+	}
+}
+
 func TestLoadParserProfileStrictPrefersCLIWhenSet(t *testing.T) {
 	dir := t.TempDir()
 	mapPath := filepath.Join(dir, "map.json")

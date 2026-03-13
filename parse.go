@@ -150,7 +150,7 @@ func loadEvents(path string, profile parserProfile) ([]Event, error) {
 	if err2 == nil {
 		return events2, nil
 	}
-	return nil, fmt.Errorf("parse input as JSONL/JSON array: %w", err)
+	return nil, fmt.Errorf("parse input as JSONL/JSON array: jsonl error: %v; json array error: %w", err, err2)
 }
 
 func decodeJSONL(r io.Reader, profile parserProfile) ([]Event, error) {
