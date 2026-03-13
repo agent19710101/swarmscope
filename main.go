@@ -76,6 +76,7 @@ func runFeed(args []string) error {
 	tail := fs.Bool("tail", false, "when used with --limit, print most recent N events instead of oldest N")
 	format := fs.String("format", "table", "output format: table|json")
 	agent := fs.String("agent", "", "filter by agent name (comma-separated for multiple)")
+	contains := fs.String("contains", "", "only include events whose message contains this case-insensitive substring")
 	since := fs.String("since", "", "only include events at or after RFC3339 timestamp")
 	until := fs.String("until", "", "only include events at or before RFC3339 timestamp")
 	last := fs.String("last", "", "only include events from the most recent duration (e.g. 30m, 2h)")
@@ -108,6 +109,7 @@ func runFeed(args []string) error {
 		return fmt.Errorf("feed: %w", err)
 	}
 	events = applyAgentFilter(events, *agent)
+	events = applyContainsFilter(events, *contains)
 	sort.Slice(events, func(i, j int) bool { return events[i].Time.Before(events[j].Time) })
 	events = applyLimit(events, *limit, *tail)
 
@@ -132,6 +134,7 @@ func runStats(args []string) error {
 	input := fs.String("input", "", "input JSON/JSONL file(s), comma-separated (required)")
 	format := fs.String("format", "table", "output format: table|json")
 	agent := fs.String("agent", "", "filter by agent name (comma-separated for multiple)")
+	contains := fs.String("contains", "", "only include events whose message contains this case-insensitive substring")
 	since := fs.String("since", "", "only include events at or after RFC3339 timestamp")
 	until := fs.String("until", "", "only include events at or before RFC3339 timestamp")
 	last := fs.String("last", "", "only include events from the most recent duration (e.g. 30m, 2h)")
@@ -164,6 +167,7 @@ func runStats(args []string) error {
 		return fmt.Errorf("stats: %w", err)
 	}
 	events = applyAgentFilter(events, *agent)
+	events = applyContainsFilter(events, *contains)
 	if len(events) == 0 {
 		if strings.EqualFold(strings.TrimSpace(*format), "json") {
 			enc := json.NewEncoder(os.Stdout)
@@ -225,6 +229,7 @@ func runAgent(args []string) error {
 	input := fs.String("input", "", "input JSON/JSONL file(s), comma-separated (required)")
 	format := fs.String("format", "table", "output format: table|json")
 	agent := fs.String("agent", "", "filter by agent name (comma-separated for multiple)")
+	contains := fs.String("contains", "", "only include events whose message contains this case-insensitive substring")
 	since := fs.String("since", "", "only include events at or after RFC3339 timestamp")
 	until := fs.String("until", "", "only include events at or before RFC3339 timestamp")
 	last := fs.String("last", "", "only include events from the most recent duration (e.g. 30m, 2h)")
@@ -258,6 +263,7 @@ func runAgent(args []string) error {
 		return fmt.Errorf("agent: %w", err)
 	}
 	events = applyAgentFilter(events, *agent)
+	events = applyContainsFilter(events, *contains)
 
 	summary := buildAgentStats(events)
 	if len(summary) == 0 {
@@ -730,6 +736,21 @@ func applyAgentFilter(events []Event, raw string) []Event {
 	return out
 }
 
+func applyContainsFilter(events []Event, raw string) []Event {
+	needle := strings.ToLower(strings.TrimSpace(raw))
+	if needle == "" {
+		return events
+	}
+
+	out := events[:0]
+	for _, ev := range events {
+		if strings.Contains(strings.ToLower(ev.Message), needle) {
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
 func parseAgentSet(raw string) map[string]struct{} {
 	if strings.TrimSpace(raw) == "" {
 		return nil
@@ -772,9 +793,9 @@ func usage() {
 	fmt.Print(`swarmscope - multi-agent run log inspector
 
 Usage:
-  swarmscope feed  --input run.jsonl[,run2.jsonl] [--limit N] [--tail] [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m] [--map profile.json] [--strict]
-  swarmscope stats --input run.jsonl[,run2.jsonl] [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m] [--map profile.json] [--strict]
-  swarmscope agent --input run.jsonl[,run2.jsonl] [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m] [--map profile.json] [--strict]
+  swarmscope feed  --input run.jsonl[,run2.jsonl] [--limit N] [--tail] [--format table|json] [--agent NAME[,NAME...]] [--contains TEXT] [--since RFC3339] [--until RFC3339] [--last 30m] [--map profile.json] [--strict]
+  swarmscope stats --input run.jsonl[,run2.jsonl] [--format table|json] [--agent NAME[,NAME...]] [--contains TEXT] [--since RFC3339] [--until RFC3339] [--last 30m] [--map profile.json] [--strict]
+  swarmscope agent --input run.jsonl[,run2.jsonl] [--format table|json] [--agent NAME[,NAME...]] [--contains TEXT] [--since RFC3339] [--until RFC3339] [--last 30m] [--map profile.json] [--strict]
 `)
 }
 

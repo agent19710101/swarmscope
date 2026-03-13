@@ -203,6 +203,27 @@ func TestParseAgentSet(t *testing.T) {
 	}
 }
 
+func TestApplyContainsFilter(t *testing.T) {
+	events := []Event{
+		{Agent: "planner", Message: "Decomposed issue #42"},
+		{Agent: "coder-a", Message: "updated parser"},
+		{Agent: "reviewer", Message: "Requested edge-case fix"},
+	}
+
+	got := applyContainsFilter(events, "  ISSUE ")
+	if len(got) != 1 {
+		t.Fatalf("want 1 event, got %d", len(got))
+	}
+	if got[0].Agent != "planner" {
+		t.Fatalf("unexpected match: %+v", got[0])
+	}
+
+	all := applyContainsFilter(events, " ")
+	if len(all) != len(events) {
+		t.Fatalf("blank needle should keep all events, got %d", len(all))
+	}
+}
+
 func TestBuildAgentStats(t *testing.T) {
 	events := []Event{
 		{Time: time.Date(2026, 3, 13, 1, 0, 0, 0, time.UTC), Agent: "a", Action: "plan", Status: "ok"},
