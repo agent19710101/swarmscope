@@ -18,7 +18,7 @@ func TestLoadEventsJSONL(t *testing.T) {
 	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	events, err := loadEvents(p)
+	events, err := loadEvents(p, defaultParserProfile())
 	if err != nil {
 		t.Fatalf("loadEvents error: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestLoadEventsJSONLGzip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	events, err := loadEvents(p)
+	events, err := loadEvents(p, defaultParserProfile())
 	if err != nil {
 		t.Fatalf("loadEvents error: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestLoadEventsJSONLLargeLine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	events, err := loadEvents(p)
+	events, err := loadEvents(p, defaultParserProfile())
 	if err != nil {
 		t.Fatalf("loadEvents error: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestLoadEventsJSONLLargeLine(t *testing.T) {
 }
 
 func TestParseOneDefaults(t *testing.T) {
-	ev, err := parseOne([]byte(`{"foo":"bar"}`))
+	ev, err := parseOne([]byte(`{"foo":"bar"}`), defaultParserProfile())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +274,7 @@ func TestLoadEventsFromPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	events, err := loadEventsFromPaths([]string{p1, p2})
+	events, err := loadEventsFromPaths([]string{p1, p2}, defaultParserProfile())
 	if err != nil {
 		t.Fatalf("loadEventsFromPaths error: %v", err)
 	}
@@ -283,5 +283,46 @@ func TestLoadEventsFromPaths(t *testing.T) {
 	}
 	if events[0].Source != p1 || events[1].Source != p2 {
 		t.Fatalf("unexpected source fields: %+v", events)
+	}
+}
+
+func TestLoadEventsCustomProfileLenient(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "custom.jsonl")
+	content := "{\"when\":\"2026-03-13T01:10:00Z\",\"actor\":\"coder\",\"op\":\"edit\",\"state\":\"ok\",\"note\":\"done\"}\n"
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	profile := defaultParserProfile()
+	profile.TimestampKeys = append([]string{"when"}, profile.TimestampKeys...)
+	profile.AgentKeys = append([]string{"actor"}, profile.AgentKeys...)
+	profile.ActionKeys = append([]string{"op"}, profile.ActionKeys...)
+	profile.StatusKeys = append([]string{"state"}, profile.StatusKeys...)
+	profile.MessageKeys = append([]string{"note"}, profile.MessageKeys...)
+
+	events, err := loadEvents(p, profile)
+	if err != nil {
+		t.Fatalf("loadEvents error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("want 1 event, got %d", len(events))
+	}
+	if events[0].Agent != "coder" || events[0].Action != "edit" || events[0].Status != "ok" {
+		t.Fatalf("unexpected event: %+v", events[0])
+	}
+}
+
+func TestLoadEventsStrictMode(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "strict.jsonl")
+	if err := os.WriteFile(p, []byte("{\"agent\":\"a\",\"action\":\"plan\",\"status\":\"ok\"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	profile := defaultParserProfile()
+	profile.Strict = true
+	if _, err := loadEvents(p, profile); err == nil {
+		t.Fatal("expected strict mode to fail when timestamp is missing")
 	}
 }

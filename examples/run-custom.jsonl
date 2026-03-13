@@ -1,0 +1,2 @@
+{"when":"2026-03-13T01:10:00Z","actor":"planner","op":"plan","state":"ok","note":"decomposed issue #42"}
+{"when":"2026-03-13T01:10:03Z","actor":"coder-a","op":"edit","state":"ok","note":"updated parser"}

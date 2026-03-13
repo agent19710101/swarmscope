@@ -1,0 +1,9 @@
+{
+  "timestamp": ["when"],
+  "agent": ["actor"],
+  "action": ["op"],
+  "status": ["state"],
+  "message": ["note"],
+  "strict": false,
+  "replaceDefaults": false
+}

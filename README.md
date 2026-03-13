@@ -53,6 +53,12 @@ swarmscope agent --input ./examples/run.jsonl
 swarmscope feed --input ./examples/run.jsonl --format json
 swarmscope stats --input ./examples/run.jsonl --format json
 swarmscope agent --input ./examples/run.jsonl --format json
+
+# custom field mapping for non-standard logs
+swarmscope feed --input ./examples/run-custom.jsonl --map ./examples/map-profile.json
+
+# strict mode (fail fast when required canonical fields are missing)
+swarmscope stats --input ./examples/run-custom.jsonl --map ./examples/map-profile.json --strict
 ```
 
 ## Demo output
@@ -84,6 +90,26 @@ agents:
 - action: `action`, `event`, `type`, `tool`
 - status: `status`, `level`, `result`
 - message: `message`, `msg`, `summary`, `content`
+
+You can extend or replace these aliases with `--map <profile.json>`.
+
+Example mapping profile:
+
+```json
+{
+  "timestamp": ["when"],
+  "agent": ["actor"],
+  "action": ["op"],
+  "status": ["state"],
+  "message": ["note"],
+  "strict": false,
+  "replaceDefaults": false
+}
+```
+
+- `replaceDefaults=false` (default): custom aliases are tried first, then built-ins.
+- `replaceDefaults=true`: only aliases from the profile are used.
+- strict mode can be enabled in the profile (`"strict": true`) or via CLI `--strict`.
 
 ## Status
 

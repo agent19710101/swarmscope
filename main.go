@@ -23,6 +23,26 @@ type Event struct {
 	Source  string
 }
 
+type parserProfile struct {
+	TimestampKeys  []string
+	AgentKeys      []string
+	ActionKeys     []string
+	StatusKeys     []string
+	MessageKeys    []string
+	Strict         bool
+	ReplaceDefault bool
+}
+
+type profileFile struct {
+	Timestamp      []string `json:"timestamp"`
+	Agent          []string `json:"agent"`
+	Action         []string `json:"action"`
+	Status         []string `json:"status"`
+	Message        []string `json:"message"`
+	Strict         *bool    `json:"strict"`
+	ReplaceDefault bool     `json:"replaceDefaults"`
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -59,6 +79,8 @@ func runFeed(args []string) error {
 	since := fs.String("since", "", "only include events at or after RFC3339 timestamp")
 	until := fs.String("until", "", "only include events at or before RFC3339 timestamp")
 	last := fs.String("last", "", "only include events from the most recent duration (e.g. 30m, 2h)")
+	mapPath := fs.String("map", "", "optional JSON field-mapping profile path")
+	strict := fs.Bool("strict", false, "strict mode: fail when canonical fields cannot be resolved")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -69,7 +91,11 @@ func runFeed(args []string) error {
 	if err != nil {
 		return fmt.Errorf("feed: %w", err)
 	}
-	events, err := loadEventsFromPaths(inputs)
+	profile, err := loadParserProfile(*mapPath, *strict)
+	if err != nil {
+		return fmt.Errorf("feed: %w", err)
+	}
+	events, err := loadEventsFromPaths(inputs, profile)
 	if err != nil {
 		return err
 	}
@@ -109,6 +135,8 @@ func runStats(args []string) error {
 	since := fs.String("since", "", "only include events at or after RFC3339 timestamp")
 	until := fs.String("until", "", "only include events at or before RFC3339 timestamp")
 	last := fs.String("last", "", "only include events from the most recent duration (e.g. 30m, 2h)")
+	mapPath := fs.String("map", "", "optional JSON field-mapping profile path")
+	strict := fs.Bool("strict", false, "strict mode: fail when canonical fields cannot be resolved")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -119,7 +147,11 @@ func runStats(args []string) error {
 	if err != nil {
 		return fmt.Errorf("stats: %w", err)
 	}
-	events, err := loadEventsFromPaths(inputs)
+	profile, err := loadParserProfile(*mapPath, *strict)
+	if err != nil {
+		return fmt.Errorf("stats: %w", err)
+	}
+	events, err := loadEventsFromPaths(inputs, profile)
 	if err != nil {
 		return err
 	}
@@ -196,6 +228,8 @@ func runAgent(args []string) error {
 	since := fs.String("since", "", "only include events at or after RFC3339 timestamp")
 	until := fs.String("until", "", "only include events at or before RFC3339 timestamp")
 	last := fs.String("last", "", "only include events from the most recent duration (e.g. 30m, 2h)")
+	mapPath := fs.String("map", "", "optional JSON field-mapping profile path")
+	strict := fs.Bool("strict", false, "strict mode: fail when canonical fields cannot be resolved")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -207,7 +241,11 @@ func runAgent(args []string) error {
 		return fmt.Errorf("agent: %w", err)
 	}
 
-	events, err := loadEventsFromPaths(inputs)
+	profile, err := loadParserProfile(*mapPath, *strict)
+	if err != nil {
+		return fmt.Errorf("agent: %w", err)
+	}
+	events, err := loadEventsFromPaths(inputs, profile)
 	if err != nil {
 		return err
 	}
@@ -322,6 +360,73 @@ func buildAgentStats(events []Event) []agentOutput {
 	return out
 }
 
+func defaultParserProfile() parserProfile {
+	return parserProfile{
+		TimestampKeys: []string{"ts", "time", "timestamp", "created_at"},
+		AgentKeys:     []string{"agent", "agent_name", "worker", "session"},
+		ActionKeys:    []string{"action", "event", "type", "tool"},
+		StatusKeys:    []string{"status", "level", "result"},
+		MessageKeys:   []string{"message", "msg", "summary", "content"},
+	}
+}
+
+func loadParserProfile(path string, strict bool) (parserProfile, error) {
+	profile := defaultParserProfile()
+	profile.Strict = strict
+	if strings.TrimSpace(path) == "" {
+		return profile, nil
+	}
+
+	bb, err := os.ReadFile(path)
+	if err != nil {
+		return parserProfile{}, fmt.Errorf("read map profile: %w", err)
+	}
+	var cfg profileFile
+	if err := json.Unmarshal(bb, &cfg); err != nil {
+		return parserProfile{}, fmt.Errorf("parse map profile JSON: %w", err)
+	}
+
+	profile.ReplaceDefault = cfg.ReplaceDefault
+	profile.TimestampKeys = mergeKeys(profile.TimestampKeys, cfg.Timestamp, cfg.ReplaceDefault)
+	profile.AgentKeys = mergeKeys(profile.AgentKeys, cfg.Agent, cfg.ReplaceDefault)
+	profile.ActionKeys = mergeKeys(profile.ActionKeys, cfg.Action, cfg.ReplaceDefault)
+	profile.StatusKeys = mergeKeys(profile.StatusKeys, cfg.Status, cfg.ReplaceDefault)
+	profile.MessageKeys = mergeKeys(profile.MessageKeys, cfg.Message, cfg.ReplaceDefault)
+	if cfg.Strict != nil {
+		profile.Strict = *cfg.Strict
+	}
+	return profile, nil
+}
+
+func mergeKeys(defaults, custom []string, replace bool) []string {
+	if len(custom) == 0 {
+		return defaults
+	}
+	if replace {
+		return sanitizeKeys(custom)
+	}
+	merged := append([]string{}, custom...)
+	merged = append(merged, defaults...)
+	return sanitizeKeys(merged)
+}
+
+func sanitizeKeys(in []string) []string {
+	out := make([]string, 0, len(in))
+	seen := map[string]struct{}{}
+	for _, key := range in {
+		k := strings.TrimSpace(key)
+		if k == "" {
+			continue
+		}
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		seen[k] = struct{}{}
+		out = append(out, k)
+	}
+	return out
+}
+
 func parseInputPaths(raw string) ([]string, error) {
 	parts := strings.Split(raw, ",")
 	out := make([]string, 0, len(parts))
@@ -338,10 +443,10 @@ func parseInputPaths(raw string) ([]string, error) {
 	return out, nil
 }
 
-func loadEventsFromPaths(paths []string) ([]Event, error) {
+func loadEventsFromPaths(paths []string, profile parserProfile) ([]Event, error) {
 	all := make([]Event, 0)
 	for _, path := range paths {
-		events, err := loadEvents(path)
+		events, err := loadEvents(path, profile)
 		if err != nil {
 			return nil, fmt.Errorf("load %q: %w", path, err)
 		}
@@ -353,12 +458,12 @@ func loadEventsFromPaths(paths []string) ([]Event, error) {
 	return all, nil
 }
 
-func loadEvents(path string) ([]Event, error) {
+func loadEvents(path string, profile parserProfile) ([]Event, error) {
 	r, err := openInputReader(path)
 	if err != nil {
 		return nil, fmt.Errorf("open input: %w", err)
 	}
-	events, err := decodeJSONL(r)
+	events, err := decodeJSONL(r, profile)
 	_ = r.Close()
 	if err == nil {
 		return events, nil
@@ -373,14 +478,14 @@ func loadEvents(path string) ([]Event, error) {
 		return nil, fmt.Errorf("open input: %w", err2)
 	}
 	defer r2.Close()
-	events2, err2 := decodeJSONArray(r2)
+	events2, err2 := decodeJSONArray(r2, profile)
 	if err2 == nil {
 		return events2, nil
 	}
 	return nil, fmt.Errorf("parse input as JSONL/JSON array: %w", err)
 }
 
-func decodeJSONL(r io.Reader) ([]Event, error) {
+func decodeJSONL(r io.Reader, profile parserProfile) ([]Event, error) {
 	var events []Event
 	s := bufio.NewScanner(r)
 	const maxJSONLLineBytes = 10 * 1024 * 1024
@@ -392,7 +497,7 @@ func decodeJSONL(r io.Reader) ([]Event, error) {
 		if text == "" {
 			continue
 		}
-		ev, err := parseOne([]byte(text))
+		ev, err := parseOne([]byte(text), profile)
 		if err != nil {
 			return nil, fmt.Errorf("line %d: %w", line, err)
 		}
@@ -407,7 +512,7 @@ func decodeJSONL(r io.Reader) ([]Event, error) {
 	return events, nil
 }
 
-func decodeJSONArray(r io.Reader) ([]Event, error) {
+func decodeJSONArray(r io.Reader, profile parserProfile) ([]Event, error) {
 	var raw []map[string]any
 	if err := json.NewDecoder(r).Decode(&raw); err != nil {
 		return nil, err
@@ -415,7 +520,7 @@ func decodeJSONArray(r io.Reader) ([]Event, error) {
 	events := make([]Event, 0, len(raw))
 	for i, m := range raw {
 		bb, _ := json.Marshal(m)
-		ev, err := parseOne(bb)
+		ev, err := parseOne(bb, profile)
 		if err != nil {
 			return nil, fmt.Errorf("item %d: %w", i, err)
 		}
@@ -455,35 +560,51 @@ func (m *multiReadCloser) Close() error {
 	return firstErr
 }
 
-func parseOne(line []byte) (Event, error) {
+func parseOne(line []byte, profile parserProfile) (Event, error) {
 	var m map[string]any
 	if err := json.Unmarshal(line, &m); err != nil {
 		return Event{}, err
 	}
 	ev := Event{
-		Time:    pickTime(m),
-		Agent:   pickString(m, "agent", "agent_name", "worker", "session"),
-		Action:  pickString(m, "action", "event", "type", "tool"),
-		Status:  pickString(m, "status", "level", "result"),
-		Message: pickString(m, "message", "msg", "summary", "content"),
+		Time:    pickTime(m, profile.TimestampKeys),
+		Agent:   pickString(m, profile.AgentKeys...),
+		Action:  pickString(m, profile.ActionKeys...),
+		Status:  pickString(m, profile.StatusKeys...),
+		Message: pickString(m, profile.MessageKeys...),
 	}
-	if ev.Agent == "" {
-		ev.Agent = "unknown"
-	}
-	if ev.Action == "" {
-		ev.Action = "unknown"
-	}
-	if ev.Status == "" {
-		ev.Status = "unknown"
-	}
-	if ev.Time.IsZero() {
-		ev.Time = time.Unix(0, 0).UTC()
+
+	if profile.Strict {
+		if ev.Time.IsZero() {
+			return Event{}, errors.New("missing timestamp field")
+		}
+		if ev.Agent == "" {
+			return Event{}, errors.New("missing agent field")
+		}
+		if ev.Action == "" {
+			return Event{}, errors.New("missing action field")
+		}
+		if ev.Status == "" {
+			return Event{}, errors.New("missing status field")
+		}
+	} else {
+		if ev.Agent == "" {
+			ev.Agent = "unknown"
+		}
+		if ev.Action == "" {
+			ev.Action = "unknown"
+		}
+		if ev.Status == "" {
+			ev.Status = "unknown"
+		}
+		if ev.Time.IsZero() {
+			ev.Time = time.Unix(0, 0).UTC()
+		}
 	}
 	return ev, nil
 }
 
-func pickTime(m map[string]any) time.Time {
-	for _, k := range []string{"ts", "time", "timestamp", "created_at"} {
+func pickTime(m map[string]any, keys []string) time.Time {
+	for _, k := range keys {
 		v, ok := m[k]
 		if !ok {
 			continue
@@ -651,9 +772,9 @@ func usage() {
 	fmt.Print(`swarmscope - multi-agent run log inspector
 
 Usage:
-  swarmscope feed  --input run.jsonl[,run2.jsonl] [--limit N] [--tail] [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m]
-  swarmscope stats --input run.jsonl[,run2.jsonl] [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m]
-  swarmscope agent --input run.jsonl[,run2.jsonl] [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m]
+  swarmscope feed  --input run.jsonl[,run2.jsonl] [--limit N] [--tail] [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m] [--map profile.json] [--strict]
+  swarmscope stats --input run.jsonl[,run2.jsonl] [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m] [--map profile.json] [--strict]
+  swarmscope agent --input run.jsonl[,run2.jsonl] [--format table|json] [--agent NAME[,NAME...]] [--since RFC3339] [--until RFC3339] [--last 30m] [--map profile.json] [--strict]
 `)
 }
 
