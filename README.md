@@ -27,6 +27,26 @@ swarmscope feed --input ./examples/run.jsonl
 swarmscope stats --input ./examples/run.jsonl
 ```
 
+## Demo output
+
+```text
+001 01:10:00  planner       plan          ok      decomposed issue #42
+002 01:10:03  coder-a       edit          ok      updated parser
+003 01:10:06  coder-b       test          fail    go test ./... failed
+004 01:10:09  reviewer      review        ok      requested edge-case fix
+```
+
+```text
+events:   4
+window:   2026-03-13T01:10:00Z -> 2026-03-13T01:10:09Z (9s)
+
+agents:
+  planner               1
+  coder-a               1
+  coder-b               1
+  reviewer              1
+```
+
 ## Event format
 
 `swarmscope` auto-detects common keys from JSON/JSONL records:
