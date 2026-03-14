@@ -531,6 +531,23 @@ func TestRunAgentJSONContractGolden(t *testing.T) {
 	assertGolden(t, "agent_json.golden", normalizeGoldenOutput(out, dir))
 }
 
+func TestSubcommandHelpReturnsSuccess(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		run  func([]string) error
+	}{
+		{name: "feed", run: runFeed},
+		{name: "stats", run: runStats},
+		{name: "agent", run: runAgent},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := captureStdout(func() error { return tc.run([]string{"--help"}) }); err != nil {
+				t.Fatalf("expected --help to return success, got %v", err)
+			}
+		})
+	}
+}
+
 func captureStdout(fn func() error) (string, error) {
 	orig := os.Stdout
 	r, w, err := os.Pipe()

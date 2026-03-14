@@ -27,6 +27,9 @@ func runFeed(args []string) error {
 	mapPath := fs.String("map", "", "optional JSON field-mapping profile path")
 	strict := fs.Bool("strict", false, "strict mode: fail when canonical fields cannot be resolved")
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
 	}
 	if strings.TrimSpace(*input) == "" {
@@ -87,6 +90,9 @@ func runStats(args []string) error {
 	mapPath := fs.String("map", "", "optional JSON field-mapping profile path")
 	strict := fs.Bool("strict", false, "strict mode: fail when canonical fields cannot be resolved")
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
 	}
 	if strings.TrimSpace(*input) == "" {
@@ -161,6 +167,9 @@ func runAgent(args []string) error {
 	mapPath := fs.String("map", "", "optional JSON field-mapping profile path")
 	strict := fs.Bool("strict", false, "strict mode: fail when canonical fields cannot be resolved")
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
 	}
 	if strings.TrimSpace(*input) == "" {
