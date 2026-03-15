@@ -361,6 +361,20 @@ func TestParseInputPaths(t *testing.T) {
 		t.Fatalf("unexpected paths: %+v", paths)
 	}
 
+	stdinPaths, err := ingest.ParseInputPaths("-")
+	if err != nil {
+		t.Fatalf("parseInputPaths stdin error: %v", err)
+	}
+	if len(stdinPaths) != 1 || stdinPaths[0] != "-" {
+		t.Fatalf("unexpected stdin paths: %+v", stdinPaths)
+	}
+
+	if _, err := ingest.ParseInputPaths("-,./a.jsonl"); err == nil {
+		t.Fatal("expected error when combining stdin with file paths")
+	}
+	if _, err := ingest.ParseInputPaths("-,-"); err == nil {
+		t.Fatal("expected error when stdin is specified more than once")
+	}
 	if _, err := ingest.ParseInputPaths(" , "); err == nil {
 		t.Fatal("expected error for empty input list")
 	}
@@ -387,6 +401,36 @@ func TestLoadEventsFromPaths(t *testing.T) {
 	}
 	if events[0].Source != p1 || events[1].Source != p2 {
 		t.Fatalf("unexpected source fields: %+v", events)
+	}
+}
+
+func TestLoadEventsFromStdinJSONArray(t *testing.T) {
+	originalStdin := os.Stdin
+	defer func() { os.Stdin = originalStdin }()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	if _, err := io.WriteString(w, `[{"ts":"2026-03-13T01:10:00Z","agent":"stdin","action":"plan","status":"ok","message":"hello"}]`); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stdin = r
+
+	events, err := ingest.LoadEventsFromPaths([]string{"-"}, ingest.DefaultProfile())
+	if err != nil {
+		t.Fatalf("loadEventsFromPaths stdin error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("want 1 event, got %d", len(events))
+	}
+	if events[0].Agent != "stdin" || events[0].Source != "-" {
+		t.Fatalf("unexpected stdin event: %+v", events[0])
 	}
 }
 

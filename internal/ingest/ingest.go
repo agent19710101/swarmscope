@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"errors"
@@ -17,18 +18,29 @@ import (
 )
 
 // ParseInputPaths splits a comma-separated --input value into individual paths.
+// Use "-" to read a single JSON/JSONL payload from stdin.
 func ParseInputPaths(raw string) ([]string, error) {
 	parts := strings.Split(raw, ",")
 	out := make([]string, 0, len(parts))
+	stdinCount := 0
 	for _, part := range parts {
 		path := strings.TrimSpace(part)
 		if path == "" {
 			continue
 		}
+		if path == "-" {
+			stdinCount++
+		}
 		out = append(out, path)
 	}
 	if len(out) == 0 {
 		return nil, errors.New("--input must include at least one file path")
+	}
+	if stdinCount > 1 {
+		return nil, errors.New("--input can include stdin (\"-\") at most once")
+	}
+	if stdinCount == 1 && len(out) > 1 {
+		return nil, errors.New("--input cannot combine stdin (\"-\") with file paths")
 	}
 	return out, nil
 }
@@ -91,6 +103,14 @@ func defaultProfile() Profile {
 }
 
 func loadEvents(path string, profile Profile) ([]model.Event, error) {
+	if path == "-" {
+		bb, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return nil, fmt.Errorf("open input: read stdin: %w", err)
+		}
+		return decodeBufferedInput(bb, profile)
+	}
+
 	r, err := openInputReader(path)
 	if err != nil {
 		return nil, fmt.Errorf("open input: %w", err)
@@ -111,6 +131,22 @@ func loadEvents(path string, profile Profile) ([]model.Event, error) {
 	}
 	defer r2.Close()
 	events2, err2 := decodeJSONArray(r2, profile)
+	if err2 == nil {
+		return events2, nil
+	}
+	return nil, fmt.Errorf("parse input as JSONL/JSON array: jsonl error: %v; json array error: %w", err, err2)
+}
+
+func decodeBufferedInput(bb []byte, profile Profile) ([]model.Event, error) {
+	events, err := decodeJSONL(bytes.NewReader(bb), profile)
+	if err == nil {
+		return events, nil
+	}
+	if errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("parse input as JSONL/JSON array: %w", err)
+	}
+
+	events2, err2 := decodeJSONArray(bytes.NewReader(bb), profile)
 	if err2 == nil {
 		return events2, nil
 	}

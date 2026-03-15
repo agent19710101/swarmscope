@@ -17,6 +17,12 @@ Agent orchestration is hot, but logs are fragmented and noisy. `swarmscope` give
 go install github.com/agent19710101/swarmscope/cmd/swarmscope@latest
 ```
 
+Or build locally:
+
+```bash
+go build ./cmd/swarmscope
+```
+
 ## Usage
 
 ```bash
@@ -61,6 +67,9 @@ swarmscope agent --input ./examples/run.jsonl
 swarmscope feed --input ./examples/run.jsonl --format json
 swarmscope stats --input ./examples/run.jsonl --format json
 swarmscope agent --input ./examples/run.jsonl --format json
+
+# read a single payload from stdin
+cat ./examples/run.jsonl | swarmscope stats --input -
 
 # custom field mapping for non-standard logs
 swarmscope feed --input ./examples/run-custom.jsonl --map ./examples/map-profile.json
