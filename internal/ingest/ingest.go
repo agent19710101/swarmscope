@@ -78,18 +78,30 @@ func LoadParserProfile(path string, strict bool, strictSet bool) (Profile, error
 
 // LoadEventsFromPaths reads each path, applies the parser profile, and annotates the source file.
 func LoadEventsFromPaths(paths []string, profile Profile) ([]model.Event, error) {
-	all := make([]model.Event, 0)
+	report, err := LoadEventsReportFromPaths(paths, profile, false)
+	if err != nil {
+		return nil, err
+	}
+	return report.Events, nil
+}
+
+// LoadEventsReportFromPaths reads each path and optionally skips invalid records while reporting parse diagnostics.
+func LoadEventsReportFromPaths(paths []string, profile Profile, skipInvalid bool) (LoadReport, error) {
+	report := LoadReport{Events: make([]model.Event, 0)}
 	for _, path := range paths {
-		events, err := loadEvents(path, profile)
+		events, diag, err := loadEvents(path, profile, skipInvalid)
 		if err != nil {
-			return nil, fmt.Errorf("load %q: %w", path, err)
+			return LoadReport{}, fmt.Errorf("load %q: %w", path, err)
 		}
 		for i := range events {
 			events[i].Source = path
 		}
-		all = append(all, events...)
+		diag.Source = path
+		report.Events = append(report.Events, events...)
+		report.Diagnostics = append(report.Diagnostics, diag)
+		report.Skipped += diag.Skipped
 	}
-	return all, nil
+	return report, nil
 }
 
 func defaultProfile() Profile {
@@ -102,59 +114,60 @@ func defaultProfile() Profile {
 	}
 }
 
-func loadEvents(path string, profile Profile) ([]model.Event, error) {
+func loadEvents(path string, profile Profile, skipInvalid bool) ([]model.Event, LoadDiagnostics, error) {
 	if path == "-" {
 		bb, err := io.ReadAll(os.Stdin)
 		if err != nil {
-			return nil, fmt.Errorf("open input: read stdin: %w", err)
+			return nil, LoadDiagnostics{}, fmt.Errorf("open input: read stdin: %w", err)
 		}
-		return decodeBufferedInput(bb, profile)
+		return decodeBufferedInput(bb, profile, skipInvalid)
 	}
 
 	r, err := openInputReader(path)
 	if err != nil {
-		return nil, fmt.Errorf("open input: %w", err)
+		return nil, LoadDiagnostics{}, fmt.Errorf("open input: %w", err)
 	}
-	events, err := decodeJSONL(r, profile)
+	events, diag, err := decodeJSONL(r, profile, skipInvalid)
 	_ = r.Close()
 	if err == nil {
-		return events, nil
+		return events, diag, nil
 	}
 
 	if errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("parse input as JSONL/JSON array: %w", err)
+		return nil, LoadDiagnostics{}, fmt.Errorf("parse input as JSONL/JSON array: %w", err)
 	}
 
 	r2, err2 := openInputReader(path)
 	if err2 != nil {
-		return nil, fmt.Errorf("open input: %w", err2)
+		return nil, LoadDiagnostics{}, fmt.Errorf("open input: %w", err2)
 	}
 	defer r2.Close()
-	events2, err2 := decodeJSONArray(r2, profile)
+	events2, diag2, err2 := decodeJSONArray(r2, profile, skipInvalid)
 	if err2 == nil {
-		return events2, nil
+		return events2, diag2, nil
 	}
-	return nil, fmt.Errorf("parse input as JSONL/JSON array: jsonl error: %v; json array error: %w", err, err2)
+	return nil, LoadDiagnostics{}, fmt.Errorf("parse input as JSONL/JSON array: jsonl error: %v; json array error: %w", err, err2)
 }
 
-func decodeBufferedInput(bb []byte, profile Profile) ([]model.Event, error) {
-	events, err := decodeJSONL(bytes.NewReader(bb), profile)
+func decodeBufferedInput(bb []byte, profile Profile, skipInvalid bool) ([]model.Event, LoadDiagnostics, error) {
+	events, diag, err := decodeJSONL(bytes.NewReader(bb), profile, skipInvalid)
 	if err == nil {
-		return events, nil
+		return events, diag, nil
 	}
 	if errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("parse input as JSONL/JSON array: %w", err)
+		return nil, LoadDiagnostics{}, fmt.Errorf("parse input as JSONL/JSON array: %w", err)
 	}
 
-	events2, err2 := decodeJSONArray(bytes.NewReader(bb), profile)
+	events2, diag2, err2 := decodeJSONArray(bytes.NewReader(bb), profile, skipInvalid)
 	if err2 == nil {
-		return events2, nil
+		return events2, diag2, nil
 	}
-	return nil, fmt.Errorf("parse input as JSONL/JSON array: jsonl error: %v; json array error: %w", err, err2)
+	return nil, LoadDiagnostics{}, fmt.Errorf("parse input as JSONL/JSON array: jsonl error: %v; json array error: %w", err, err2)
 }
 
-func decodeJSONL(r io.Reader, profile Profile) ([]model.Event, error) {
+func decodeJSONL(r io.Reader, profile Profile, skipInvalid bool) ([]model.Event, LoadDiagnostics, error) {
 	var events []model.Event
+	diag := LoadDiagnostics{Format: "jsonl"}
 	s := bufio.NewScanner(r)
 	const maxJSONLLineBytes = 10 * 1024 * 1024
 	s.Buffer(make([]byte, 0, 64*1024), maxJSONLLineBytes)
@@ -167,34 +180,51 @@ func decodeJSONL(r io.Reader, profile Profile) ([]model.Event, error) {
 		}
 		ev, err := parseOne([]byte(text), profile)
 		if err != nil {
-			return nil, fmt.Errorf("line %d: %w", line, err)
+			if skipInvalid {
+				diag.Skipped++
+				diag.Errors = append(diag.Errors, fmt.Sprintf("line %d: %v", line, err))
+				continue
+			}
+			return nil, LoadDiagnostics{}, fmt.Errorf("line %d: %w", line, err)
 		}
 		events = append(events, ev)
 	}
 	if err := s.Err(); err != nil {
-		return nil, err
+		return nil, LoadDiagnostics{}, err
 	}
 	if len(events) == 0 {
-		return nil, io.EOF
+		if diag.Skipped > 0 && skipInvalid {
+			return nil, LoadDiagnostics{}, io.EOF
+		}
+		return nil, LoadDiagnostics{}, io.EOF
 	}
-	return events, nil
+	return events, diag, nil
 }
 
-func decodeJSONArray(r io.Reader, profile Profile) ([]model.Event, error) {
+func decodeJSONArray(r io.Reader, profile Profile, skipInvalid bool) ([]model.Event, LoadDiagnostics, error) {
 	var raw []map[string]any
 	if err := json.NewDecoder(r).Decode(&raw); err != nil {
-		return nil, err
+		return nil, LoadDiagnostics{}, err
 	}
+	diag := LoadDiagnostics{Format: "json-array"}
 	events := make([]model.Event, 0, len(raw))
 	for i, m := range raw {
 		bb, _ := json.Marshal(m)
 		ev, err := parseOne(bb, profile)
 		if err != nil {
-			return nil, fmt.Errorf("item %d: %w", i, err)
+			if skipInvalid {
+				diag.Skipped++
+				diag.Errors = append(diag.Errors, fmt.Sprintf("item %d: %v", i, err))
+				continue
+			}
+			return nil, LoadDiagnostics{}, fmt.Errorf("item %d: %w", i, err)
 		}
 		events = append(events, ev)
 	}
-	return events, nil
+	if len(events) == 0 {
+		return nil, LoadDiagnostics{}, io.EOF
+	}
+	return events, diag, nil
 }
 
 func openInputReader(path string) (io.ReadCloser, error) {
@@ -394,6 +424,21 @@ type Profile struct {
 	ReplaceDefault bool
 }
 
+// LoadDiagnostics describes invalid records skipped while reading one source.
+type LoadDiagnostics struct {
+	Source  string   `json:"source,omitempty"`
+	Format  string   `json:"format,omitempty"`
+	Skipped int      `json:"skipped"`
+	Errors  []string `json:"errors,omitempty"`
+}
+
+// LoadReport contains loaded events plus parse diagnostics.
+type LoadReport struct {
+	Events      []model.Event     `json:"events"`
+	Skipped     int               `json:"skipped"`
+	Diagnostics []LoadDiagnostics `json:"diagnostics,omitempty"`
+}
+
 // DefaultProfile returns the built-in parser profile.
 func DefaultProfile() Profile {
 	return defaultProfile()
@@ -401,7 +446,8 @@ func DefaultProfile() Profile {
 
 // LoadEvents exposes the loader for testing and advanced workflows.
 func LoadEvents(path string, profile Profile) ([]model.Event, error) {
-	return loadEvents(path, profile)
+	events, _, err := loadEvents(path, profile, false)
+	return events, err
 }
 
 // ParseOne exposes the single-record parser.

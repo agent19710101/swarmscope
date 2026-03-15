@@ -57,6 +57,10 @@ swarmscope stats --input ./logs/a.jsonl,./logs/b.jsonl --source ./logs/a.jsonl
 swarmscope feed --input ./examples/run.jsonl --contains "edge-case"
 swarmscope stats --input ./examples/run.jsonl --contains "failed"
 
+# tolerate messy logs, skip malformed records, and report what got ignored
+swarmscope stats --input ./examples/run.jsonl --skip-invalid
+swarmscope feed --input ./logs/mixed.jsonl --skip-invalid --format json
+
 # summary table by agent + action + status
 swarmscope stats --input ./examples/run.jsonl
 
@@ -134,6 +138,7 @@ Early but usable (v0.x). Current focus:
 - robust log normalization
 - operator UX polish and command/module maintainability
 - test coverage on parsing, summaries, and CLI output contracts
+- safer handling of mixed-quality logs with optional malformed-record skipping and diagnostics
 
 ## Roadmap
 
@@ -149,6 +154,7 @@ Early but usable (v0.x). Current focus:
 - [x] Multi-file input merge (`--input a.jsonl,b.jsonl`)
 - [x] Tail mode for recent feed slices (`--limit N --tail`)
 - [x] Gzip-compressed JSONL input (`.jsonl.gz`)
+- [x] Optional malformed-record skipping with diagnostics (`--skip-invalid`)
 - [x] Release automation (tag-triggered matrix builds + checksums + GitHub Releases)
 
 ## Reproducible CI

@@ -29,6 +29,7 @@ func runFeed(args []string) error {
 	last := fs.String("last", "", "only include events from the most recent duration (e.g. 30m, 2h)")
 	mapPath := fs.String("map", "", "optional JSON field-mapping profile path")
 	strict := fs.Bool("strict", false, "strict mode: fail when canonical fields cannot be resolved")
+	skipInvalid := fs.Bool("skip-invalid", false, "skip malformed records and report how many were ignored")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -46,10 +47,11 @@ func runFeed(args []string) error {
 	if err != nil {
 		return fmt.Errorf("feed: %w", err)
 	}
-	events, err := ingest.LoadEventsFromPaths(inputs, profile)
+	report, err := ingest.LoadEventsReportFromPaths(inputs, profile, *skipInvalid)
 	if err != nil {
 		return err
 	}
+	events := report.Events
 	sinceRaw, untilRaw, err := feed.NormalizeTimeWindowArgs(*since, *until, *last, time.Now().UTC())
 	if err != nil {
 		return fmt.Errorf("feed: %w", err)
@@ -70,10 +72,17 @@ func runFeed(args []string) error {
 			ts := ev.Time.Format("15:04:05")
 			fmt.Printf("%03d %s  %-12s  %-12s  %-6s  %s\n", i+1, ts, truncate(ev.Agent, 12), truncate(ev.Action, 12), truncate(ev.Status, 6), truncate(ev.Message, 80))
 		}
+		if report.Skipped > 0 {
+			fmt.Printf("\nignored %d malformed record(s) via --skip-invalid\n", report.Skipped)
+		}
 		return nil
 	case "json":
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
+		if *skipInvalid {
+			report.Events = events
+			return enc.Encode(report)
+		}
 		return enc.Encode(events)
 	default:
 		return fmt.Errorf("feed: unsupported --format %q (want table|json)", *format)
@@ -92,6 +101,7 @@ func runStats(args []string) error {
 	last := fs.String("last", "", "only include events from the most recent duration (e.g. 30m, 2h)")
 	mapPath := fs.String("map", "", "optional JSON field-mapping profile path")
 	strict := fs.Bool("strict", false, "strict mode: fail when canonical fields cannot be resolved")
+	skipInvalid := fs.Bool("skip-invalid", false, "skip malformed records and report how many were ignored")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -109,10 +119,11 @@ func runStats(args []string) error {
 	if err != nil {
 		return fmt.Errorf("stats: %w", err)
 	}
-	events, err := ingest.LoadEventsFromPaths(inputs, profile)
+	report, err := ingest.LoadEventsReportFromPaths(inputs, profile, *skipInvalid)
 	if err != nil {
 		return err
 	}
+	events := report.Events
 	sinceRaw, untilRaw, err := feed.NormalizeTimeWindowArgs(*since, *until, *last, time.Now().UTC())
 	if err != nil {
 		return fmt.Errorf("stats: %w", err)
@@ -128,9 +139,15 @@ func runStats(args []string) error {
 		if strings.EqualFold(strings.TrimSpace(*format), "json") {
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
+			if *skipInvalid {
+				return enc.Encode(stats.Output{Summary: stats.Summary{}, Skipped: report.Skipped, Diagnostics: report.Diagnostics})
+			}
 			return enc.Encode(stats.Summary{})
 		}
 		fmt.Println("no events found")
+		if report.Skipped > 0 {
+			fmt.Printf("ignored %d malformed record(s) via --skip-invalid\n", report.Skipped)
+		}
 		return nil
 	}
 	sort.Slice(events, func(i, j int) bool { return events[i].Time.Before(events[j].Time) })
@@ -141,6 +158,9 @@ func runStats(args []string) error {
 	case "", "table":
 		fmt.Printf("events:   %d\n", summary.Events)
 		fmt.Printf("window:   %s -> %s (%s)\n", summary.Window.Start, summary.Window.End, summary.Window.Duration)
+		if report.Skipped > 0 {
+			fmt.Printf("ignored:  %d malformed record(s)\n", report.Skipped)
+		}
 		fmt.Println()
 		printCountTable("agents", summary.Agents)
 		fmt.Println()
@@ -151,6 +171,9 @@ func runStats(args []string) error {
 	case "json":
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
+		if *skipInvalid {
+			return enc.Encode(stats.Output{Summary: summary, Skipped: report.Skipped, Diagnostics: report.Diagnostics})
+		}
 		return enc.Encode(summary)
 	default:
 		return fmt.Errorf("stats: unsupported --format %q (want table|json)", *format)
@@ -169,6 +192,7 @@ func runAgent(args []string) error {
 	last := fs.String("last", "", "only include events from the most recent duration (e.g. 30m, 2h)")
 	mapPath := fs.String("map", "", "optional JSON field-mapping profile path")
 	strict := fs.Bool("strict", false, "strict mode: fail when canonical fields cannot be resolved")
+	skipInvalid := fs.Bool("skip-invalid", false, "skip malformed records and report how many were ignored")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -186,10 +210,11 @@ func runAgent(args []string) error {
 	if err != nil {
 		return fmt.Errorf("agent: %w", err)
 	}
-	events, err := ingest.LoadEventsFromPaths(inputs, profile)
+	report, err := ingest.LoadEventsReportFromPaths(inputs, profile, *skipInvalid)
 	if err != nil {
 		return err
 	}
+	events := report.Events
 	sinceRaw, untilRaw, err := feed.NormalizeTimeWindowArgs(*since, *until, *last, time.Now().UTC())
 	if err != nil {
 		return fmt.Errorf("agent: %w", err)
@@ -207,9 +232,15 @@ func runAgent(args []string) error {
 		if strings.EqualFold(strings.TrimSpace(*format), "json") {
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
+			if *skipInvalid {
+				return enc.Encode(stats.AgentOutput{Agents: []stats.AgentSummary{}, Skipped: report.Skipped, Diagnostics: report.Diagnostics})
+			}
 			return enc.Encode([]stats.AgentSummary{})
 		}
 		fmt.Println("no events found")
+		if report.Skipped > 0 {
+			fmt.Printf("ignored %d malformed record(s) via --skip-invalid\n", report.Skipped)
+		}
 		return nil
 	}
 
@@ -220,10 +251,16 @@ func runAgent(args []string) error {
 			fmt.Printf("  %-18s %4d events  first=%s  last=%s  actions=%d  statuses=%d\n",
 				truncate(row.Agent, 18), row.Events, row.FirstSeen, row.LastSeen, row.Actions, row.Statuses)
 		}
+		if report.Skipped > 0 {
+			fmt.Printf("\nignored %d malformed record(s) via --skip-invalid\n", report.Skipped)
+		}
 		return nil
 	case "json":
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
+		if *skipInvalid {
+			return enc.Encode(stats.AgentOutput{Agents: summary, Skipped: report.Skipped, Diagnostics: report.Diagnostics})
+		}
 		return enc.Encode(summary)
 	default:
 		return fmt.Errorf("agent: unsupported --format %q (want table|json)", *format)

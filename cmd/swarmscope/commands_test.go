@@ -495,6 +495,36 @@ func TestLoadEventsFallbackReportsJSONArrayError(t *testing.T) {
 	}
 }
 
+func TestLoadEventsReportFromPathsSkipInvalid(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "mixed.jsonl")
+	content := strings.Join([]string{
+		`{"ts":"2026-03-13T01:10:00Z","agent":"a","action":"plan","status":"ok","message":"good"}`,
+		`{"ts":"2026-03-13T01:10:01Z","agent":"broken",`,
+		`{"ts":"2026-03-13T01:10:02Z","agent":"b","action":"test","status":"ok","message":"still good"}`,
+	}, "\n") + "\n"
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := ingest.LoadEventsReportFromPaths([]string{p}, ingest.DefaultProfile(), true)
+	if err != nil {
+		t.Fatalf("loadEventsReportFromPaths error: %v", err)
+	}
+	if len(report.Events) != 2 {
+		t.Fatalf("want 2 events, got %d", len(report.Events))
+	}
+	if report.Skipped != 1 {
+		t.Fatalf("want 1 skipped record, got %d", report.Skipped)
+	}
+	if len(report.Diagnostics) != 1 || len(report.Diagnostics[0].Errors) != 1 {
+		t.Fatalf("unexpected diagnostics: %+v", report.Diagnostics)
+	}
+	if !strings.Contains(report.Diagnostics[0].Errors[0], "line 2") {
+		t.Fatalf("expected line number in diagnostics, got: %+v", report.Diagnostics)
+	}
+}
+
 func TestLoadParserProfileStrictPrefersCLIWhenSet(t *testing.T) {
 	dir := t.TempDir()
 	mapPath := filepath.Join(dir, "map.json")

@@ -4,6 +4,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/agent19710101/swarmscope/internal/ingest"
 	"github.com/agent19710101/swarmscope/internal/model"
 )
 
@@ -23,6 +24,13 @@ type Summary struct {
 	Status  map[string]int `json:"status"`
 }
 
+// Output is the JSON envelope for the stats command.
+type Output struct {
+	Summary
+	Skipped     int                      `json:"skipped,omitempty"`
+	Diagnostics []ingest.LoadDiagnostics `json:"diagnostics,omitempty"`
+}
+
 // AgentSummary describes the per-agent aggregation used for the agent command.
 type AgentSummary struct {
 	Agent     string `json:"agent"`
@@ -31,6 +39,13 @@ type AgentSummary struct {
 	LastSeen  string `json:"lastSeen"`
 	Actions   int    `json:"actions"`
 	Statuses  int    `json:"statuses"`
+}
+
+// AgentOutput is the JSON envelope for the agent command.
+type AgentOutput struct {
+	Agents      []AgentSummary           `json:"agents"`
+	Skipped     int                      `json:"skipped,omitempty"`
+	Diagnostics []ingest.LoadDiagnostics `json:"diagnostics,omitempty"`
 }
 
 // BuildSummary aggregates the provided events into counts and a time window.
