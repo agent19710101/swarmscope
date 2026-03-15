@@ -17,4 +17,4 @@
 .vscode/
 
 # Local build artifact
-swarmscope
+/swarmscope
