@@ -1,4 +1,4 @@
-package main
+package feed
 
 import (
 	"errors"
@@ -6,10 +6,12 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/agent19710101/swarmscope/internal/model"
 )
 
-// Filter utilities implement cross-command event slicing and windowing behavior.
-func normalizeTimeWindowArgs(sinceRaw, untilRaw, lastRaw string, now time.Time) (string, string, error) {
+// NormalizeTimeWindowArgs converts CLI time window flags into explicit timestamps.
+func NormalizeTimeWindowArgs(sinceRaw, untilRaw, lastRaw string, now time.Time) (string, string, error) {
 	sinceRaw = strings.TrimSpace(sinceRaw)
 	untilRaw = strings.TrimSpace(untilRaw)
 	lastRaw = strings.TrimSpace(lastRaw)
@@ -34,7 +36,8 @@ func normalizeTimeWindowArgs(sinceRaw, untilRaw, lastRaw string, now time.Time) 
 	return start.Format(time.RFC3339), end.Format(time.RFC3339), nil
 }
 
-func applyTimeWindow(events []Event, sinceRaw, untilRaw string) ([]Event, error) {
+// ApplyTimeWindow filters events based on the provided RFC3339 window.
+func ApplyTimeWindow(events []model.Event, sinceRaw, untilRaw string) ([]model.Event, error) {
 	var since, until time.Time
 	var err error
 
@@ -71,7 +74,8 @@ func applyTimeWindow(events []Event, sinceRaw, untilRaw string) ([]Event, error)
 	return out, nil
 }
 
-func applyAgentFilter(events []Event, raw string) []Event {
+// ApplyAgentFilter filters events by a comma-separated list of agents.
+func ApplyAgentFilter(events []model.Event, raw string) []model.Event {
 	agents := parseAgentSet(raw)
 	if len(agents) == 0 {
 		return events
@@ -86,7 +90,8 @@ func applyAgentFilter(events []Event, raw string) []Event {
 	return out
 }
 
-func applySourceFilter(events []Event, raw string) []Event {
+// ApplySourceFilter filters events by source path or basename.
+func ApplySourceFilter(events []model.Event, raw string) []model.Event {
 	sources := parseSourceSet(raw)
 	if len(sources) == 0 {
 		return events
@@ -107,7 +112,8 @@ func applySourceFilter(events []Event, raw string) []Event {
 	return out
 }
 
-func applyContainsFilter(events []Event, raw string) []Event {
+// ApplyContainsFilter filters events whose message contains the given substring.
+func ApplyContainsFilter(events []model.Event, raw string) []model.Event {
 	needle := strings.ToLower(strings.TrimSpace(raw))
 	if needle == "" {
 		return events
@@ -120,6 +126,17 @@ func applyContainsFilter(events []Event, raw string) []Event {
 		}
 	}
 	return out
+}
+
+// ApplyLimit trims the event slice according to --limit and --tail flags.
+func ApplyLimit(events []model.Event, limit int, tail bool) []model.Event {
+	if limit <= 0 || limit >= len(events) {
+		return events
+	}
+	if tail {
+		return events[len(events)-limit:]
+	}
+	return events[:limit]
 }
 
 func parseSourceSet(raw string) map[string]struct{} {
@@ -154,25 +171,4 @@ func parseAgentSet(raw string) map[string]struct{} {
 		return nil
 	}
 	return out
-}
-
-func applyLimit(events []Event, limit int, tail bool) []Event {
-	if limit <= 0 || limit >= len(events) {
-		return events
-	}
-	if tail {
-		return events[len(events)-limit:]
-	}
-	return events[:limit]
-}
-
-func truncate(s string, n int) string {
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-	if n <= 1 {
-		return string(r[:n])
-	}
-	return string(r[:n-1]) + "…"
 }

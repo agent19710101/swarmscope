@@ -1,11 +1,10 @@
-package main
+package ingest
 
 import (
 	"bufio"
 	"compress/gzip"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"math"
@@ -13,32 +12,41 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/agent19710101/swarmscope/internal/model"
 )
 
-// Parsing utilities normalize heterogeneous JSON/JSONL into Event records.
-func defaultParserProfile() parserProfile {
-	return parserProfile{
-		TimestampKeys: []string{"ts", "time", "timestamp", "created_at"},
-		AgentKeys:     []string{"agent", "agent_name", "worker", "session"},
-		ActionKeys:    []string{"action", "event", "type", "tool"},
-		StatusKeys:    []string{"status", "level", "result"},
-		MessageKeys:   []string{"message", "msg", "summary", "content"},
+// ParseInputPaths splits a comma-separated --input value into individual paths.
+func ParseInputPaths(raw string) ([]string, error) {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		path := strings.TrimSpace(part)
+		if path == "" {
+			continue
+		}
+		out = append(out, path)
 	}
+	if len(out) == 0 {
+		return nil, errors.New("--input must include at least one file path")
+	}
+	return out, nil
 }
 
-func loadParserProfile(path string, strict bool, strictSet bool) (parserProfile, error) {
-	profile := defaultParserProfile()
+// LoadParserProfile reads a JSON map profile and merges it with the defaults.
+func LoadParserProfile(path string, strict bool, strictSet bool) (Profile, error) {
+	profile := defaultProfile()
 	if strings.TrimSpace(path) == "" {
 		return profile, nil
 	}
 
 	bb, err := os.ReadFile(path)
 	if err != nil {
-		return parserProfile{}, fmt.Errorf("read map profile: %w", err)
+		return Profile{}, fmt.Errorf("read map profile: %w", err)
 	}
 	var cfg profileFile
 	if err := json.Unmarshal(bb, &cfg); err != nil {
-		return parserProfile{}, fmt.Errorf("parse map profile JSON: %w", err)
+		return Profile{}, fmt.Errorf("parse map profile JSON: %w", err)
 	}
 
 	profile.ReplaceDefault = cfg.ReplaceDefault
@@ -56,63 +64,9 @@ func loadParserProfile(path string, strict bool, strictSet bool) (parserProfile,
 	return profile, nil
 }
 
-func boolFlagWasProvided(fs *flag.FlagSet, name string) bool {
-	provided := false
-	fs.Visit(func(f *flag.Flag) {
-		if f.Name == name {
-			provided = true
-		}
-	})
-	return provided
-}
-
-func mergeKeys(defaults, custom []string, replace bool) []string {
-	if len(custom) == 0 {
-		return defaults
-	}
-	if replace {
-		return sanitizeKeys(custom)
-	}
-	merged := append([]string{}, custom...)
-	merged = append(merged, defaults...)
-	return sanitizeKeys(merged)
-}
-
-func sanitizeKeys(in []string) []string {
-	out := make([]string, 0, len(in))
-	seen := map[string]struct{}{}
-	for _, key := range in {
-		k := strings.TrimSpace(key)
-		if k == "" {
-			continue
-		}
-		if _, ok := seen[k]; ok {
-			continue
-		}
-		seen[k] = struct{}{}
-		out = append(out, k)
-	}
-	return out
-}
-
-func parseInputPaths(raw string) ([]string, error) {
-	parts := strings.Split(raw, ",")
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		path := strings.TrimSpace(part)
-		if path == "" {
-			continue
-		}
-		out = append(out, path)
-	}
-	if len(out) == 0 {
-		return nil, errors.New("--input must include at least one file path")
-	}
-	return out, nil
-}
-
-func loadEventsFromPaths(paths []string, profile parserProfile) ([]Event, error) {
-	all := make([]Event, 0)
+// LoadEventsFromPaths reads each path, applies the parser profile, and annotates the source file.
+func LoadEventsFromPaths(paths []string, profile Profile) ([]model.Event, error) {
+	all := make([]model.Event, 0)
 	for _, path := range paths {
 		events, err := loadEvents(path, profile)
 		if err != nil {
@@ -126,7 +80,17 @@ func loadEventsFromPaths(paths []string, profile parserProfile) ([]Event, error)
 	return all, nil
 }
 
-func loadEvents(path string, profile parserProfile) ([]Event, error) {
+func defaultProfile() Profile {
+	return Profile{
+		TimestampKeys: []string{"ts", "time", "timestamp", "created_at"},
+		AgentKeys:     []string{"agent", "agent_name", "worker", "session"},
+		ActionKeys:    []string{"action", "event", "type", "tool"},
+		StatusKeys:    []string{"status", "level", "result"},
+		MessageKeys:   []string{"message", "msg", "summary", "content"},
+	}
+}
+
+func loadEvents(path string, profile Profile) ([]model.Event, error) {
 	r, err := openInputReader(path)
 	if err != nil {
 		return nil, fmt.Errorf("open input: %w", err)
@@ -153,8 +117,8 @@ func loadEvents(path string, profile parserProfile) ([]Event, error) {
 	return nil, fmt.Errorf("parse input as JSONL/JSON array: jsonl error: %v; json array error: %w", err, err2)
 }
 
-func decodeJSONL(r io.Reader, profile parserProfile) ([]Event, error) {
-	var events []Event
+func decodeJSONL(r io.Reader, profile Profile) ([]model.Event, error) {
+	var events []model.Event
 	s := bufio.NewScanner(r)
 	const maxJSONLLineBytes = 10 * 1024 * 1024
 	s.Buffer(make([]byte, 0, 64*1024), maxJSONLLineBytes)
@@ -180,12 +144,12 @@ func decodeJSONL(r io.Reader, profile parserProfile) ([]Event, error) {
 	return events, nil
 }
 
-func decodeJSONArray(r io.Reader, profile parserProfile) ([]Event, error) {
+func decodeJSONArray(r io.Reader, profile Profile) ([]model.Event, error) {
 	var raw []map[string]any
 	if err := json.NewDecoder(r).Decode(&raw); err != nil {
 		return nil, err
 	}
-	events := make([]Event, 0, len(raw))
+	events := make([]model.Event, 0, len(raw))
 	for i, m := range raw {
 		bb, _ := json.Marshal(m)
 		ev, err := parseOne(bb, profile)
@@ -228,12 +192,12 @@ func (m *multiReadCloser) Close() error {
 	return firstErr
 }
 
-func parseOne(line []byte, profile parserProfile) (Event, error) {
+func parseOne(line []byte, profile Profile) (model.Event, error) {
 	var m map[string]any
 	if err := json.Unmarshal(line, &m); err != nil {
-		return Event{}, err
+		return model.Event{}, err
 	}
-	ev := Event{
+	ev := model.Event{
 		Time:    pickTime(m, profile.TimestampKeys),
 		Agent:   pickString(m, profile.AgentKeys...),
 		Action:  pickString(m, profile.ActionKeys...),
@@ -243,16 +207,16 @@ func parseOne(line []byte, profile parserProfile) (Event, error) {
 
 	if profile.Strict {
 		if ev.Time.IsZero() {
-			return Event{}, errors.New("missing timestamp field")
+			return model.Event{}, errors.New("missing timestamp field")
 		}
 		if ev.Agent == "" {
-			return Event{}, errors.New("missing agent field")
+			return model.Event{}, errors.New("missing agent field")
 		}
 		if ev.Action == "" {
-			return Event{}, errors.New("missing action field")
+			return model.Event{}, errors.New("missing action field")
 		}
 		if ev.Status == "" {
-			return Event{}, errors.New("missing status field")
+			return model.Event{}, errors.New("missing status field")
 		}
 	} else {
 		if ev.Agent == "" {
@@ -353,4 +317,68 @@ func pickString(m map[string]any, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func mergeKeys(defaults, custom []string, replace bool) []string {
+	if len(custom) == 0 {
+		return defaults
+	}
+	if replace {
+		return sanitizeKeys(custom)
+	}
+	merged := append([]string{}, custom...)
+	merged = append(merged, defaults...)
+	return sanitizeKeys(merged)
+}
+
+func sanitizeKeys(in []string) []string {
+	out := make([]string, 0, len(in))
+	seen := map[string]struct{}{}
+	for _, key := range in {
+		k := strings.TrimSpace(key)
+		if k == "" {
+			continue
+		}
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		seen[k] = struct{}{}
+		out = append(out, k)
+	}
+	return out
+}
+
+type Profile struct {
+	TimestampKeys  []string
+	AgentKeys      []string
+	ActionKeys     []string
+	StatusKeys     []string
+	MessageKeys    []string
+	Strict         bool
+	ReplaceDefault bool
+}
+
+// DefaultProfile returns the built-in parser profile.
+func DefaultProfile() Profile {
+	return defaultProfile()
+}
+
+// LoadEvents exposes the loader for testing and advanced workflows.
+func LoadEvents(path string, profile Profile) ([]model.Event, error) {
+	return loadEvents(path, profile)
+}
+
+// ParseOne exposes the single-record parser.
+func ParseOne(line []byte, profile Profile) (model.Event, error) {
+	return parseOne(line, profile)
+}
+
+type profileFile struct {
+	Timestamp      []string `json:"timestamp"`
+	Agent          []string `json:"agent"`
+	Action         []string `json:"action"`
+	Status         []string `json:"status"`
+	Message        []string `json:"message"`
+	Strict         *bool    `json:"strict"`
+	ReplaceDefault bool     `json:"replaceDefaults"`
 }

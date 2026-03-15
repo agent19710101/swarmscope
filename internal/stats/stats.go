@@ -1,12 +1,40 @@
-package main
+package stats
 
 import (
-	"fmt"
 	"sort"
 	"time"
+
+	"github.com/agent19710101/swarmscope/internal/model"
 )
 
-func buildStats(events []Event) statsOutput {
+// TimeWindow describes the start/end timestamps that were observed.
+type TimeWindow struct {
+	Start    string `json:"start"`
+	End      string `json:"end"`
+	Duration string `json:"duration"`
+}
+
+// Summary is the aggregated stats output for the stats command.
+type Summary struct {
+	Events  int            `json:"events"`
+	Window  TimeWindow     `json:"window"`
+	Agents  map[string]int `json:"agents"`
+	Actions map[string]int `json:"actions"`
+	Status  map[string]int `json:"status"`
+}
+
+// AgentSummary describes the per-agent aggregation used for the agent command.
+type AgentSummary struct {
+	Agent     string `json:"agent"`
+	Events    int    `json:"events"`
+	FirstSeen string `json:"firstSeen"`
+	LastSeen  string `json:"lastSeen"`
+	Actions   int    `json:"actions"`
+	Statuses  int    `json:"statuses"`
+}
+
+// BuildSummary aggregates the provided events into counts and a time window.
+func BuildSummary(events []model.Event) Summary {
 	agentCount := map[string]int{}
 	actionCount := map[string]int{}
 	statusCount := map[string]int{}
@@ -18,9 +46,9 @@ func buildStats(events []Event) statsOutput {
 	}
 
 	duration := events[len(events)-1].Time.Sub(events[0].Time)
-	return statsOutput{
+	return Summary{
 		Events: len(events),
-		Window: timeWindow{
+		Window: TimeWindow{
 			Start:    events[0].Time.Format(time.RFC3339),
 			End:      events[len(events)-1].Time.Format(time.RFC3339),
 			Duration: duration.String(),
@@ -31,7 +59,8 @@ func buildStats(events []Event) statsOutput {
 	}
 }
 
-func buildAgentStats(events []Event) []agentOutput {
+// BuildAgentSummaries produces per-agent stats for the agent command.
+func BuildAgentSummaries(events []model.Event) []AgentSummary {
 	type acc struct {
 		events   int
 		first    time.Time
@@ -58,9 +87,9 @@ func buildAgentStats(events []Event) []agentOutput {
 		entry.statuses[ev.Status] = struct{}{}
 	}
 
-	out := make([]agentOutput, 0, len(byAgent))
+	out := make([]AgentSummary, 0, len(byAgent))
 	for agent, entry := range byAgent {
-		out = append(out, agentOutput{
+		out = append(out, AgentSummary{
 			Agent:     agent,
 			Events:    entry.events,
 			FirstSeen: entry.first.Format(time.RFC3339),
@@ -77,25 +106,4 @@ func buildAgentStats(events []Event) []agentOutput {
 		return out[i].Events > out[j].Events
 	})
 	return out
-}
-
-func printCountTable(title string, counts map[string]int) {
-	type row struct {
-		key string
-		n   int
-	}
-	rows := make([]row, 0, len(counts))
-	for k, n := range counts {
-		rows = append(rows, row{key: k, n: n})
-	}
-	sort.Slice(rows, func(i, j int) bool {
-		if rows[i].n == rows[j].n {
-			return rows[i].key < rows[j].key
-		}
-		return rows[i].n > rows[j].n
-	})
-	fmt.Println(title + ":")
-	for _, r := range rows {
-		fmt.Printf("  %-18s %4d\n", truncate(r.key, 18), r.n)
-	}
 }

@@ -14,7 +14,7 @@ Agent orchestration is hot, but logs are fragmented and noisy. `swarmscope` give
 ## Install
 
 ```bash
-go install github.com/agent19710101/swarmscope@latest
+go install github.com/agent19710101/swarmscope/cmd/swarmscope@latest
 ```
 
 ## Usage
@@ -141,6 +141,19 @@ Early but usable (v0.x). Current focus:
 - [x] Tail mode for recent feed slices (`--limit N --tail`)
 - [x] Gzip-compressed JSONL input (`.jsonl.gz`)
 - [x] Release automation (tag-triggered matrix builds + checksums + GitHub Releases)
+
+## Reproducible CI
+
+All workflows pin third-party actions to immutable commits and explicit tool versions to avoid supply-chain drift:
+
+- `actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5`
+- `actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff`
+- `dominikh/staticcheck-action@e986ce0bb60df51c6c9f5ccbf853d1b5bd1ca14c` (`version: 2026.1`)
+- `actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02`
+- `actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093`
+- `softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b`
+
+Update these commits only after reviewing the upstream changelog and verifying compatibility.
 
 ## Releases
 
